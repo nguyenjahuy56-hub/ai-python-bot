@@ -9,23 +9,22 @@ from flask import Flask
 # ==========================================
 # ⚙️ CONFIG HỆ THỐNG
 # ==========================================
-# Link đã được sửa lại cho chuẩn, xóa rác dư thừa
 API_ENDPOINT = "https://apisun-production-8d96.up.railway.app/api/ddvipro"
 SYNC_ENDPOINT = "https://apisun-production-8d96.up.railway.app/api/update-prediction"
 
 HISTORY_MAX = 200          
-REQUIRED_LEN = 100 # Ép đủ 50 ván mới bắt đầu soi mẫu cầu động
+REQUIRED_LEN = 13 # Ép đủ 100 ván mới bắt đầu soi mẫu cầu động
 
 app = Flask(__name__)
 
 @app.route('/')
 def keep_alive():
-    return "🔥 AI Server V17 - CHỈ DÙNG MẪU ĐỘNG 50 VÁN GẦN NHẤT..."
+    return "🔥 AI Server V17 - CHỈ DÙNG MẪU ĐỘNG 100 VÁN GẦN NHẤT..."
 
 # ==========================================
-# 🧠 LÕI DUY NHẤT: QUÉT MẪU CẦU ĐỘNG 50 VÁN
+# 🧠 LÕI DUY NHẤT: QUÉT MẪU CẦU ĐỘNG 100 VÁN
 # ==========================================
-def soi_mau_cau_50_van(chuoi_full):
+def soi_mau_cau_100_van(chuoi_full):
     chuoi_str = "".join(chuoi_full)
     
     # Quét độ dài mẫu từ 7 tay xuống 3 tay
@@ -56,7 +55,7 @@ def soi_mau_cau_50_van(chuoi_full):
         elif count_X > count_T:
             return "XỈU", f"Khớp mẫu lặp {l} tay (Quá khứ ra Xỉu nhiều hơn)"
             
-    return "KHÔNG RÕ", "Không tìm thấy mẫu lặp tương ứng trong 50 ván"
+    return "KHÔNG RÕ", "Không tìm thấy mẫu lặp tương ứng trong 100 ván"
 
 # ==========================================
 # 🤖 LỚP ĐIỀU KHIỂN CHÍNH
@@ -102,7 +101,7 @@ class SunwinLogic_V17:
         except: pass
 
     def run(self):
-        print("🚀 Khởi động: CHỈ DÙNG MẪU ĐỘNG 50 VÁN...")
+        print("🚀 Khởi động: CHỈ DÙNG MẪU ĐỘNG 100 VÁN...")
         while True:
             try:
                 api_data = requests.get(API_ENDPOINT, timeout=3).json()
@@ -126,13 +125,15 @@ class SunwinLogic_V17:
                     
                     # Dự đoán ván tiếp theo
                     if len(data) >= REQUIRED_LEN:
-                        recent_50 = [item['kq'] for item in data[-50:]]
-                        pred, detail = soi_mau_cau_50_van(recent_50)
+                        # ĐÃ FIX: Lấy đủ 100 ván thay vì 50
+                        recent_100 = [item['kq'] for item in data[-100:]]
+                        pred, detail = soi_mau_cau_100_van(recent_100)
                         self.last_final_pred = pred if pred != "KHÔNG RÕ" else None
                         self.history_predictions[str(curr_session + 1)] = pred
                         self.sync_to_dashboard(curr_session + 1, pred, detail)
                     else:
-                        self.sync_to_dashboard(curr_session + 1, "WAIT", f"Đang nạp mồi: {len(data)}/50 ván")
+                        # ĐÃ FIX: Đổi thông báo chữ thành 100 ván
+                        self.sync_to_dashboard(curr_session + 1, "WAIT", f"Đang nạp mồi: {len(data)}/100 ván")
             except: pass
             time.sleep(2)
 
