@@ -22,10 +22,8 @@ from flask import Flask
 
 # THAY BẰNG LINK RENDER CỦA ÔNG VÀO 2 DÒNG DƯỚI ĐÂY
 
-API_ENDPOINT = "https://apisun-51l0.onrender.com/api/ddvipro](https://apisun-51l0.onrender.com/api/ddvipro"
-
-SYNC_ENDPOINT = "https://apisun-51l0.onrender.com/api/update-prediction](https://apisun-51l0.onrender.com/api/update-prediction"
-
+API_ENDPOINT = "https://apisun-51l0.onrender.com/api/ddvipro"
+SYNC_ENDPOINT = "https://apisun-51l0.onrender.com/api/update-prediction"
 
 
 HISTORY_MAX = 200          
