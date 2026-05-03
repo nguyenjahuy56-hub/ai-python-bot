@@ -21,7 +21,7 @@ app = Flask(__name__)
 
 @app.route('/')
 def keep_alive():
-    return "🔥 AI Server - FULL MA TRẬN 4 KHÓA (KHÔNG NHÚNG TAY LOGIC)..."
+    return "🔥 AI Server - MA TRẬN NÂNG CẤP (GÃY 2 BẺ / ĐÚNG 3 TẮT)..."
 
 # ==========================================
 # 🧠 LÕI 1: THUẬT TOÁN ĐẾM CHUỖI 56 (QUÉT ĐỘNG 50 VÁN)
@@ -278,17 +278,23 @@ class SunwinLogic_Merged:
         self.last_final_pred = None 
         self.history_predictions = {}
         
-        # --- HỆ THỐNG BAIT (MA TRẬN BẺ CẦU) ---
+        # --- HỆ THỐNG BAIT (MA TRẬN BẺ CẦU NÂNG CẤP) ---
         self.last_raw_pred = None     
         self.last_raw_key = None      
         self.last_raw_bucket = None   
         
-        # Không nhúng tay, để mặc định False hết
+        # Trạng thái Bẻ (Mặc định False)
         self.bait_matrix = {
             "TÀI": {50: False, 60: False, 70: False, 80: False, 90: False},
             "XỈU": {50: False, 60: False, 70: False, 80: False, 90: False},
             "TỔNG HỢP TÀI": {50: False, 60: False, 70: False, 80: False, 90: False},
             "TỔNG HỢP XỈU": {50: False, 60: False, 70: False, 80: False, 90: False}
+        }
+        
+        # Bộ đếm chuỗi thắng/thua cho từng mốc
+        self.bucket_streaks = {
+            k: {b: {'loss': 0, 'win': 0} for b in [50, 60, 70, 80, 90]}
+            for k in self.bait_matrix.keys()
         }
         
         self.ensure_files_exist()
@@ -346,7 +352,7 @@ class SunwinLogic_Merged:
         data.append({'phien': phien, 'dice': dice, 'tong': tong, 'kq': tx_str})
         self.save_data(data)
         
-        # --- CHECK WIN RATE THỰC TẾ ---
+        # --- CHECK WIN RATE THỰC TẾ TRÊN WEB ---
         if self.last_final_pred is not None:
             self.total_played += 1
             if self.last_final_pred == actual_full:
@@ -357,20 +363,39 @@ class SunwinLogic_Merged:
                 wr_percent = (self.total_won / self.total_played) * 100
                 print(f"💀 [THỐNG KÊ] Ván trước GÃY! (Tỉ lệ WR: {self.total_won}/{self.total_played} - {wr_percent:.1f}%)")
         
-        # --- KIỂM TRA SAI SỐ ĐỂ BẺ CẦU MA TRẬN (BAIT MATRIX) ---
+        # --- CẬP NHẬT MA TRẬN THEO QUY TẮC: GÃY 2 BẬT BẺ - ĐÚNG 3 TẮT BẺ ---
         if self.last_raw_key is not None and self.last_raw_bucket is not None:
             raw_was_correct = (self.last_raw_pred == actual_full) 
             matrix_key = self.last_raw_key
             bucket = self.last_raw_bucket
+            streak = self.bucket_streaks[matrix_key][bucket]
             
-            if not raw_was_correct:
-                if not self.bait_matrix[matrix_key][bucket]:
-                    print(f"🚨 [HỆ THỐNG] Phát hiện KÈO {matrix_key} mốc {bucket}% XỊT! Kích hoạt BẺ CẦU riêng cho kèo này.")
-                self.bait_matrix[matrix_key][bucket] = True
+            if not self.bait_matrix[matrix_key][bucket]:
+                # 1. TRẠNG THÁI BÌNH THƯỜNG (CHƯA BẺ)
+                if not raw_was_correct:
+                    streak['loss'] += 1
+                    streak['win'] = 0
+                    print(f"⚠️ [THEO DÕI] Khóa {matrix_key} {bucket}% gãy tay thứ {streak['loss']}.")
+                    # Gãy 2 tay -> Bật Bẻ
+                    if streak['loss'] >= 2:
+                        self.bait_matrix[matrix_key][bucket] = True
+                        streak['loss'] = 0
+                        print(f"🚨 [MA TRẬN] {matrix_key} {bucket}% GÃY 2 TAY LIÊN TIẾP! BẬT CHẾ ĐỘ BẺ CẦU.")
+                else:
+                    streak['loss'] = 0 # Đang bình thường mà đúng thì reset đếm gãy
             else:
-                if self.bait_matrix[matrix_key][bucket]:
-                    print(f"✅ [HỆ THỐNG] KÈO {matrix_key} mốc {bucket}% đã chuẩn lại. Tắt bẻ cầu.")
-                self.bait_matrix[matrix_key][bucket] = False
+                # 2. TRẠNG THÁI ĐANG BẺ CẦU
+                if raw_was_correct:
+                    streak['win'] += 1
+                    streak['loss'] = 0
+                    print(f"⚠️ [THEO DÕI] Logic gốc {matrix_key} {bucket}% đúng lại tay thứ {streak['win']}.")
+                    # Logic gốc đúng 3 tay liên tiếp -> Tắt Bẻ
+                    if streak['win'] >= 3:
+                        self.bait_matrix[matrix_key][bucket] = False
+                        streak['win'] = 0
+                        print(f"✅ [MA TRẬN] Cầu {matrix_key} {bucket}% đã chuẩn form 3 tay! TẮT CHẾ ĐỘ BẺ CẦU.")
+                else:
+                    streak['win'] = 0 # Đang bẻ (tức là đánh ngược lại) mà logic gốc vẫn sai (mình ăn) thì reset đếm đúng
 
         return len(data)
 
@@ -456,7 +481,7 @@ class SunwinLogic_Merged:
         print(f"{'='*85}\n")
 
     def run(self):
-        print("🚀 Khởi động TOOL (Full Mẫu Cầu 50 Ván + Auto Bait Matrix)...")
+        print("🚀 Khởi động TOOL (Ma Trận Nâng Cấp Gãy 2 / Đúng 3)...")
         while True:
             try:
                 res = requests.get(API_ENDPOINT, timeout=3)
