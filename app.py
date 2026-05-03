@@ -14,7 +14,7 @@ API_ENDPOINT = "https://apisun-production-8d96.up.railway.app/api/ddvipro"
 SYNC_ENDPOINT = "https://apisun-production-8d96.up.railway.app/api/update-prediction"
 
 HISTORY_MAX = 200          
-REQUIRED_LEN = 50 # Ép đủ 50 ván mới bắt đầu soi mẫu cầu động
+REQUIRED_LEN = 100 # Ép đủ 50 ván mới bắt đầu soi mẫu cầu động
 
 app = Flask(__name__)
 
