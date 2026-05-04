@@ -7,7 +7,7 @@ import threading
 import hashlib
 import optuna
 import firebase_admin
-from firebase_admin import credentials, db
+from firebase_admin import db
 from flask import Flask
 
 # Tắt log rác của Optuna
@@ -19,28 +19,34 @@ optuna.logging.set_verbosity(optuna.logging.WARNING)
 API_ENDPOINT = "https://apisun-production-8d96.up.railway.app/api/ddvipro"
 SYNC_ENDPOINT = "https://apisun-production-8d96.up.railway.app/api/update-prediction"
 
-# DÁN LINK DATABASE CỦA BRO VÀO ĐÂY
+# LINK DATABASE & SECRET KEY
 FIREBASE_DB_URL = "https://tool-ai-sunwin-default-rtdb.asia-southeast1.firebasedatabase.app/"
+DATABASE_SECRET = "v2D5kyo2PG3M4zi3gp4z4N1gite7Fk1QmVvEQsdw"
 
 HISTORY_MAX = 200          
 REQUIRED_LEN = 13  # Bỏ 13 phiên đầu để lấy đủ chuỗi TX       
 
-# Khởi tạo Firebase Cloud
+# 🛠️ CÁCH KẾT NỐI MỚI: DÙNG DATABASE SECRET BẤT TỬ
 try:
-    cred = credentials.Certificate("firebase_key.json")
-    firebase_admin.initialize_app(cred, {'databaseURL': FIREBASE_DB_URL})
-    print("✅ Kết nối Firebase Cloud thành công! Dữ liệu đã được bảo vệ.")
+    firebase_admin.initialize_app(options={
+        'databaseURL': FIREBASE_DB_URL,
+        'databaseAuthVariableOverride': {
+            'uid': 'my-service-worker'
+        }
+    })
+    db.reference('/').authenticate(DATABASE_SECRET)
+    print("✅ Kết nối Firebase Cloud BẰNG SECRET thành công! Không lo lỗi file JSON nữa.")
 except Exception as e:
-    print(f"⚠️ Lỗi kết nối Firebase (Check file firebase_key.json): {e}")
+    print(f"❌❌❌ LỖI KHỞI TẠO FIREBASE: {e}")
 
 app = Flask(__name__)
 
 @app.route('/')
 def keep_alive():
-    return "🔥 AI Server v6 FINAL - FIREBASE + OPTUNA 20 + FULL LOGIC..."
+    return "🔥 AI Server v6 FINAL - FIREBASE SECRET + OPTUNA 20 + FULL LOGIC..."
 
 # ==========================================
-# 🧠 LÕI 1: MODULO 11 + HASH CONFIDENCE[cite: 5]
+# 🧠 LÕI 1: MODULO 11 + HASH CONFIDENCE
 # ==========================================
 def get_confidence(v1, v2, v3):
     raw_string = f"{v1}-{v2}-{v3}"
@@ -66,7 +72,7 @@ def predict_tx(v1, v2, v3):
     return result, conf
 
 # ==========================================
-# 🧠 LÕI 2: TRỌNG SỐ CHUỖI 13 VÁN (TỪ CŨ TỚI MỚI)[cite: 5]
+# 🧠 LÕI 2: TRỌNG SỐ CHUỖI 13 VÁN (TỪ CŨ TỚI MỚI)
 # ==========================================
 def phan_tich_chuoi_weighted(chuoi):
     weights = [1.5**i for i in range(len(chuoi))]
@@ -81,7 +87,7 @@ def du_doan_tu_chuoi(chuoi_50):
     return "XONG", perc_tai, perc_xiu
 
 # ==========================================
-# 🧠 LỌC BỆT DÀI (PRE-PROCESSING)[cite: 5]
+# 🧠 LỌC BỆT DÀI (PRE-PROCESSING)
 # ==========================================
 def loai_bo_bet_dai(chuoi_kq, max_streak=5):
     if not chuoi_kq: return []
@@ -105,7 +111,7 @@ def loai_bo_bet_dai(chuoi_kq, max_streak=5):
     return cleaned
 
 # ==========================================
-# 🧠 LÕI 3A: MẪU CẦU XÚC XẮC 100 VÁN (DẠNG + ĐIỂM)[cite: 5]
+# 🧠 LÕI 3A: MẪU CẦU XÚC XẮC 100 VÁN (DẠNG + ĐIỂM)
 # ==========================================
 def predict_maucau_diem(list_tong_100, w_m4, w_m3):
     if len(list_tong_100) < 4:
@@ -134,7 +140,7 @@ def predict_maucau_diem(list_tong_100, w_m4, w_m3):
     return diem_tai, diem_xiu, mc_log
 
 # ==========================================
-# 🧠 LÕI 3B: MẪU CẦU KÝ TỰ T/X (4-6 KÝ TỰ TRONG 50 VÁN)[cite: 5]
+# 🧠 LÕI 3B: MẪU CẦU KÝ TỰ T/X (4-6 KÝ TỰ TRONG 50 VÁN)
 # ==========================================
 def predict_maucau_tx_diem(chuoi_50_kq, w_tx):
     # LỌC BỆT DÀI TRƯỚC KHI QUÉT MẪU
@@ -169,7 +175,7 @@ def predict_maucau_tx_diem(chuoi_50_kq, w_tx):
     return round(t_pts, 1), round(x_pts, 1), mc_tx_log or "[]"
 
 # ==========================================
-# 🤖 LỚP ĐIỀU KHIỂN CHÍNH[cite: 5]
+# 🤖 LỚP ĐIỀU KHIỂN CHÍNH
 # ==========================================
 class SunwinLogic_Merged:
     def __init__(self):
@@ -203,18 +209,19 @@ class SunwinLogic_Merged:
 
     def load_data(self):
         try:
-            # Sửa đổi để kéo từ Firebase[cite: 5]
             ref = db.reference('history_data')
             data = ref.get()
             return data if data is not None else []
-        except Exception: return []
+        except Exception as e:
+            print(f"❌ LỖI ĐỌC FIREBASE: {e}")
+            return []
 
     def save_data(self, data):
         try:
-            # Sửa đổi để lưu vào Firebase[cite: 5]
             ref = db.reference('history_data')
             ref.set(data[-HISTORY_MAX:])
-        except Exception: pass
+        except Exception as e:
+            print(f"❌ LỖI LƯU FIREBASE: {e}")
 
     def get_confidence_bucket(self, percent):
         if percent >= 100: return 100
@@ -246,7 +253,7 @@ class SunwinLogic_Merged:
         except: pass
 
     # ==========================================
-    # ⚙️ OPTUNA: TỐI ƯU HÓA[cite: 5]
+    # ⚙️ OPTUNA: TỐI ƯU HÓA
     # ==========================================
     def run_optuna_tuning(self, data):
         if len(data) < 30: return 
@@ -313,7 +320,7 @@ class SunwinLogic_Merged:
         data.append({'phien': phien, 'dice': dice, 'tong': tong, 'kq': actual_full})
         self.save_data(data)
         
-        # --- CHỈ ĐÁNH GIÁ THẮNG/THUA NẾU KHỚP ĐÚNG PHIÊN ĐÃ DỰ ĐOÁN[cite: 5] ---
+        # --- CHỈ ĐÁNH GIÁ THẮNG/THUA NẾU KHỚP ĐÚNG PHIÊN ĐÃ DỰ ĐOÁN ---
         if self.last_final_pred is not None and self.predicted_session_id == phien:
             self.total_played += 1
             self.tune_counter += 1
@@ -326,7 +333,6 @@ class SunwinLogic_Merged:
                 wr_percent = (self.total_won / self.total_played) * 100
                 print(f"💀 Ván {phien} GÃY! (Tỉ lệ WR: {self.total_won}/{self.total_played} - {wr_percent:.1f}%)")
                 
-            # CẬP NHẬT: Tối ưu mỗi 20 phiên[cite: 5]
             if self.tune_counter >= 20:
                 self.tune_counter = 0
                 self.run_optuna_tuning(data)
@@ -334,7 +340,7 @@ class SunwinLogic_Merged:
             # --- MA TRẬN BẺ CẦU LINH HOẠT THEO WINRATE ---
             current_wr = (self.total_won / self.total_played * 100) if self.total_played > 0 else 50
             
-            # Tính ngưỡng bẻ cầu động[cite: 5]
+            # Tính ngưỡng bẻ cầu động (Nâng nhẹ đáy lên 3 để đỡ bị bẻ quá nhạy khi WR thấp)
             if current_wr >= 55:
                 nguong_be_cau = 4
             else:
@@ -421,7 +427,7 @@ class SunwinLogic_Merged:
         matrix_key = chot_goc
         current_bucket = self.get_confidence_bucket(conf_percent)
 
-        # In Log[cite: 5]
+        # In Log
         print(f"📘 [LOGIC: HỢP NHẤT TRỌNG SỐ, MODULO & MẪU KÉP]")
         print(f"   => Modulo 11    : TÀI {mod_tai:.1f}% | XỈU {mod_xiu:.1f}%")
         print(f"   => Trọng số 13  : TÀI {chuoi_tai:.1f}% | XỈU {chuoi_xiu:.1f}%")
@@ -434,7 +440,7 @@ class SunwinLogic_Merged:
         note = ""
         chot_cuoi = chot_goc
         
-        # Ma trận Bẻ cầu[cite: 5]
+        # Ma trận Bẻ cầu
         if self.bait_matrix[matrix_key][current_bucket]:
             chot_cuoi = "XỈU" if chot_goc == "TÀI" else "TÀI"
             note = f" (⚠️ {matrix_key} mốc {current_bucket}% đang lừa -> ÉP BẺ SANG {chot_cuoi})"
@@ -457,7 +463,7 @@ class SunwinLogic_Merged:
         print(f"{'='*85}\n")
 
     def run(self):
-        print("🚀 Khởi động TOOL v6 (Firebase Cloud + Full Logic)...")
+        print("🚀 Khởi động TOOL v6 (Firebase Secret + Full Logic)...")
         while True:
             try:
                 res = requests.get(API_ENDPOINT, timeout=3)
