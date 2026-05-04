@@ -14,8 +14,8 @@ optuna.logging.set_verbosity(optuna.logging.WARNING)
 # ==========================================
 # ⚙️ CONFIG HỆ THỐNG RAILWAY / RENDER
 # ==========================================
-API_ENDPOINT = "https://apisun-51l0.onrender.com/api/ddvipro"
-SYNC_ENDPOINT = "https://apisun-51l0.onrender.com/api/update-prediction"
+API_ENDPOINT = "https://apisun-production-8d96.up.railway.app/api/ddvipro"
+SYNC_ENDPOINT = "https://apisun-production-8d96.up.railway.app/api/update-prediction"
 
 HISTORY_MAX = 200          
 REQUIRED_LEN = 8          
