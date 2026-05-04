@@ -170,6 +170,16 @@ def predict_maucau_tx_diem(chuoi_50_kq, w_tx):
     return round(t_pts, 1), round(x_pts, 1), mc_tx_log or "[]"
 
 # ==========================================
+# 🧠 LÕI 4: LOGIC XU HƯỚNG (TREND) - 5 VÁN GẦN NHẤT[cite: 3]
+# ==========================================
+def predict_trend_logic(chuoi_50_kq, w_trend):
+    last_5 = chuoi_50_kq[-5:] if len(chuoi_50_kq) >= 5 else chuoi_50_kq
+    t5 = sum(1 for x in last_5 if x == "T")
+    x5 = sum(1 for x in last_5 if x == "X")
+    trend_score = (t5 - x5) * w_trend * 0.6  #[cite: 3]
+    return trend_score
+
+# ==========================================
 # 🤖 LỚP ĐIỀU KHIỂN CHÍNH
 # ==========================================
 class SunwinLogic_Merged:
@@ -188,6 +198,7 @@ class SunwinLogic_Merged:
         self.w_m4 = 1.0     
         self.w_m3 = 0.5     
         self.w_tx = 1.0     
+        self.w_trend = 1.0  #[cite: 3]
         
         self.tune_counter = 0
         
@@ -259,6 +270,7 @@ class SunwinLogic_Merged:
             w_m4 = trial.suggest_float('w_m4', 0.1, 2.0)
             w_m3 = trial.suggest_float('w_m3', 0.1, 1.0)
             w_tx = trial.suggest_float('w_tx', 0.1, 2.0)
+            w_trend = trial.suggest_float('w_trend', 0.1, 2.0) #[cite: 3]
             
             test_len = min(20, len(data) - 13)
             correct = 0
@@ -284,10 +296,13 @@ class SunwinLogic_Merged:
                 list_tong_100 = [x['tong'] for x in past_data[-100:]]
                 mc_xx_tai, mc_xx_xiu, _ = predict_maucau_diem(list_tong_100, w_m4, w_m3)
                 mc_tx_tai, mc_tx_xiu, _ = predict_maucau_tx_diem(chuoi_50_kq, w_tx)
+
+                # 4.5 Tính điểm Xu hướng[cite: 3]
+                trend_val = predict_trend_logic(chuoi_50_kq, w_trend)
                 
                 # 5. Cap limit điểm cộng
-                bonus_tai = min(20.0, mc_xx_tai + mc_tx_tai)
-                bonus_xiu = min(20.0, mc_xx_xiu + mc_tx_xiu)
+                bonus_tai = min(20.0, mc_xx_tai + mc_tx_tai + (trend_val if trend_val > 0 else 0)) #[cite: 3]
+                bonus_xiu = min(20.0, mc_xx_xiu + mc_tx_xiu + (abs(trend_val) if trend_val < 0 else 0)) #[cite: 3]
                 
                 pred = "TÀI" if (avg_tai + bonus_tai) > (avg_xiu + bonus_xiu) else "XỈU"
                 actual = "TÀI" if data[i]['tong'] > 10 else "XỈU"
@@ -303,8 +318,9 @@ class SunwinLogic_Merged:
         self.w_m4 = round(study.best_params['w_m4'], 2)
         self.w_m3 = round(study.best_params['w_m3'], 2)
         self.w_tx = round(study.best_params['w_tx'], 2)
+        self.w_trend = round(study.best_params['w_trend'], 2) #[cite: 3]
         
-        print(f"✅ [OPTUNA] Xong! W_Mod:{self.w_mod} | W_Chuoi:{self.w_chuoi} | M4:{self.w_m4} | M3:{self.w_m3} | M_TX:{self.w_tx}\n")
+        print(f"✅ [OPTUNA] Xong! W_Mod:{self.w_mod} | W_Chuoi:{self.w_chuoi} | M4:{self.w_m4} | M3:{self.w_m3} | M_TX:{self.w_tx} | Trend:{self.w_trend}\n")
 
     def inject_new_data(self, phien, dice, tong):
         actual_full = "TÀI" if tong > 10 else "XỈU"
@@ -358,7 +374,7 @@ class SunwinLogic_Merged:
                     if raw_was_correct:
                         streak['win'] += 1
                         streak['loss'] = 0
-                        if streak['win'] >= 2:
+                        if streak['win'] >= 2: #[cite: 4]
                             self.bait_matrix[matrix_key][bucket] = False
                             streak['win'] = 0
                             print(f"✅ [MA TRẬN] Cầu {matrix_key} {bucket}% chuẩn form {nguong_be_cau} tay! TẮT BẺ CẦU.")
@@ -401,9 +417,12 @@ class SunwinLogic_Merged:
         mc_xx_tai, mc_xx_xiu, mc_xx_log = predict_maucau_diem(list_tong_100, self.w_m4, self.w_m3)
         mc_tx_tai, mc_tx_xiu, mc_tx_log = predict_maucau_tx_diem(chuoi_50_kq, self.w_tx)
 
-        # BỘ LỌC NHIỄU (Cap limit max 20)
-        bonus_tai = min(20.0, mc_xx_tai + mc_tx_tai)
-        bonus_xiu = min(20.0, mc_xx_xiu + mc_tx_xiu)
+        # 5. Điểm Xu hướng (Trend)[cite: 3]
+        trend_val = predict_trend_logic(chuoi_50_kq, self.w_trend)
+
+        # BỘ LỌC NHIỄU (Cap limit max 20, tích hợp Trend)[cite: 3]
+        bonus_tai = min(20.0, mc_xx_tai + mc_tx_tai + (trend_val if trend_val > 0 else 0)) #[cite: 3]
+        bonus_xiu = min(20.0, mc_xx_xiu + mc_tx_xiu + (abs(trend_val) if trend_val < 0 else 0)) #[cite: 3]
 
         # Hợp nhất Toán học
         final_tai = chia_tai + bonus_tai
@@ -427,6 +446,7 @@ class SunwinLogic_Merged:
         print(f"   => % Base Hợp nhất: TÀI {chia_tai:.1f}% | XỈU {chia_xiu:.1f}%")
         print(f"   => Điểm Mẫu XX  : +{round(mc_xx_tai,1)} TÀI | +{round(mc_xx_xiu,1)} XỈU (Mẫu {mc_xx_log})")
         print(f"   => Điểm Mẫu TX  : +{mc_tx_tai} TÀI | +{mc_tx_xiu} XỈU (Mẫu {mc_tx_log})")
+        print(f"   => Điểm XU HƯỚNG: {'+' if trend_val > 0 else ''}{round(trend_val, 1)} (Trend {abs(trend_val)})") #[cite: 3]
         print(f"   => TỔNG KẾT     : Khớp logic {chot_goc} ({conf_percent}%)")
         print(f"   => Trạng thái   : [MỐC LƯU: {matrix_key} {current_bucket}%]")
 
