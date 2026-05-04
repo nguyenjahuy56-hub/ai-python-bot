@@ -79,46 +79,47 @@ def loai_bo_bet_dai(chuoi_kq, max_streak=5):
     return cleaned
 
 # ==========================================
-# 🧠 LÕI 2A: MẪU CẦU XÚC XẮC 130 VÁN (DẠNG + ĐIỂM)
+# 🧠 LÕI 2A: MẪU CẦU XÚC XẮC 130 VÁN (MẪU 4-5 ĐIỂM)
 # ==========================================
-def predict_maucau_diem(list_tong_130, w_m4, w_m3):
-    if len(list_tong_130) < 4:
+def predict_maucau_diem(list_tong_130, w_m5, w_m4):
+    if len(list_tong_130) < 5:
         return 0, 0, "[]"
 
-    last_3 = list_tong_130[-3:]
-    last_2 = list_tong_130[-2:]
+    last_5 = list_tong_130[-5:]
+    last_4 = list_tong_130[-4:]
 
-    t4, x4, t3, x3 = 0, 0, 0, 0
+    t5, x5, t4, x4 = 0, 0, 0, 0
+    # Quét Mẫu 5
+    for i in range(len(list_tong_130) - 4):
+        if list_tong_130[i:i+4] == last_5[:-1]:
+            if list_tong_130[i+4] > 10: t5 += 1
+            else: x5 += 1
+
     # Quét Mẫu 4
     for i in range(len(list_tong_130) - 3):
-        if list_tong_130[i:i+3] == last_3:
+        if list_tong_130[i:i+3] == last_4[:-1]:
             if list_tong_130[i+3] > 10: t4 += 1
             else: x4 += 1
 
-    # Quét Mẫu 3
-    for i in range(len(list_tong_130) - 2):
-        if list_tong_130[i:i+2] == last_2:
-            if list_tong_130[i+2] > 10: t3 += 1
-            else: x3 += 1
-
-    diem_tai = (t4 * w_m4) + (t3 * w_m3)
-    diem_xiu = (x4 * w_m4) + (x3 * w_m3)
-    mc_log = f"[{'-'.join(map(str, last_3))}]"
+    diem_tai = (t5 * w_m5) + (t4 * w_m4)
+    diem_xiu = (x5 * w_m5) + (x4 * w_m4)
+    mc_log = f"[{'-'.join(map(str, last_4))}]"
     
     return diem_tai, diem_xiu, mc_log
 
 # ==========================================
-# 🧠 LÕI 2B: MẪU CẦU KÝ TỰ T/X (4-6 KÝ TỰ TRONG 80 VÁN)
+# 🧠 LÕI 2B: MẪU CẦU KÝ TỰ T/X (5-7 KÝ TỰ TRONG 80 VÁN)
 # ==========================================
 def predict_maucau_tx_diem(chuoi_80_kq, w_tx):
     # LỌC BỆT DÀI TRƯỚC KHI QUÉT MẪU
     chuoi_sach = loai_bo_bet_dai(chuoi_80_kq, max_streak=5)
     
-    if len(chuoi_sach) < 7: 
+    if len(chuoi_sach) < 8: 
         return 0.0, 0.0, "[]"
 
     t_pts, x_pts = 0.0, 0.0
-    patterns = [{'len': 6, 'mult': 3.0}, {'len': 5, 'mult': 2.0}, {'len': 4, 'mult': 1.0}]
+    # Xếp từ dài nhất (7) xuống ngắn nhất (5)
+    patterns = [{'len': 7, 'mult': 4.0}, {'len': 6, 'mult': 3.0}, {'len': 5, 'mult': 2.0}]
     mc_tx_log = ""
     
     for p in patterns:
@@ -135,10 +136,12 @@ def predict_maucau_tx_diem(chuoi_80_kq, w_tx):
                 if next_val == "T": t_count += 1
                 else: x_count += 1
         
+        # CHỈ ƯU TIÊN MẪU DÀI NHẤT KHỚP ĐƯỢC
         if t_count > 0 or x_count > 0:
             t_pts += t_count * mult * w_tx
             x_pts += x_count * mult * w_tx
-            if not mc_tx_log: mc_tx_log = f"[{''.join(target)}]" 
+            mc_tx_log = f"[{''.join(target)}]" 
+            break # Ngắt luôn, không quét các mẫu ngắn hơn nữa
         
     return round(t_pts, 1), round(x_pts, 1), mc_tx_log or "[]"
 
@@ -179,8 +182,8 @@ class SunwinLogic_Merged:
         
         # --- THAM SỐ TỐI ƯU CỦA OPTUNA ---
         self.w_chuoi = 1.0  
-        self.w_m4 = 1.0     
-        self.w_m3 = 0.5     
+        self.w_m5 = 1.0     
+        self.w_m4 = 0.5     
         self.w_tx = 1.0     
         self.w_trend = 1.0  #[cite: 3, 4]
         self.w_be_bet = 1.0 # <--- LOGIC BẺ BỆT MỚI[cite: 4]
@@ -251,8 +254,8 @@ class SunwinLogic_Merged:
         
         def objective(trial):
             w_chuoi = trial.suggest_float('w_chuoi', 0.5, 3.0)
-            w_m4 = trial.suggest_float('w_m4', 0.1, 2.0)
-            w_m3 = trial.suggest_float('w_m3', 0.1, 1.0)
+            w_m5 = trial.suggest_float('w_m5', 0.1, 2.0)
+            w_m4 = trial.suggest_float('w_m4', 0.1, 1.0)
             w_tx = trial.suggest_float('w_tx', 0.1, 2.0)
             w_trend = trial.suggest_float('w_trend', 0.1, 2.0) #[cite: 3, 4]
             w_be_bet = trial.suggest_float('w_be_bet', 0.1, 5.0) #[cite: 4]
@@ -275,7 +278,7 @@ class SunwinLogic_Merged:
                 list_tong_130 = [x['tong'] for x in past_data[-130:]]
                 chuoi_80_kq = ["T" if x['tong'] > 10 else "X" for x in past_data[-80:]]
                 
-                mc_xx_tai, mc_xx_xiu, _ = predict_maucau_diem(list_tong_130, w_m4, w_m3)
+                mc_xx_tai, mc_xx_xiu, _ = predict_maucau_diem(list_tong_130, w_m5, w_m4)
                 mc_tx_tai, mc_tx_xiu, _ = predict_maucau_tx_diem(chuoi_80_kq, w_tx)
 
                 # 4. Tính điểm Xu hướng[cite: 3, 4]
@@ -298,13 +301,13 @@ class SunwinLogic_Merged:
         study.optimize(objective, n_trials=35)
         
         self.w_chuoi = round(study.best_params['w_chuoi'], 2)
+        self.w_m5 = round(study.best_params['w_m5'], 2)
         self.w_m4 = round(study.best_params['w_m4'], 2)
-        self.w_m3 = round(study.best_params['w_m3'], 2)
         self.w_tx = round(study.best_params['w_tx'], 2)
         self.w_trend = round(study.best_params['w_trend'], 2) #[cite: 3, 4]
         self.w_be_bet = round(study.best_params['w_be_bet'], 2) #[cite: 4]
         
-        print(f"✅ [OPTUNA] Xong! W_Chuoi:{self.w_chuoi} | Dice130:{self.w_m4} | M_TX:{self.w_tx} | Trend:{self.w_trend} | BeBet:{self.w_be_bet}\n")
+        print(f"✅ [OPTUNA] Xong! W_Chuoi:{self.w_chuoi} | Dice130(5/4):{self.w_m5}/{self.w_m4} | M_TX:{self.w_tx} | Trend:{self.w_trend} | BeBet:{self.w_be_bet}\n")
 
     def inject_new_data(self, phien, dice, tong):
         actual_full = "TÀI" if tong > 10 else "XỈU"
@@ -393,7 +396,7 @@ class SunwinLogic_Merged:
         list_tong_130 = [item['tong'] for item in data[-130:]]
         chuoi_80_kq = ["T" if item['tong'] > 10 else "X" for item in data[-80:]]
         
-        mc_xx_tai, mc_xx_xiu, mc_xx_log = predict_maucau_diem(list_tong_130, self.w_m4, self.w_m3)
+        mc_xx_tai, mc_xx_xiu, mc_xx_log = predict_maucau_diem(list_tong_130, self.w_m5, self.w_m4)
         mc_tx_tai, mc_tx_xiu, mc_tx_log = predict_maucau_tx_diem(chuoi_80_kq, self.w_tx)
 
         # 4. Điểm Xu hướng (Trend)[cite: 3, 4]
