@@ -13,18 +13,18 @@ from flask import Flask
 optuna.logging.set_verbosity(optuna.logging.WARNING)
 
 # ==========================================
-# ⚙️ CONFIG HỆ THỐNG[cite: 4]
+# ⚙️ CONFIG HỆ THỐNG
 # ==========================================
 API_ENDPOINT = "https://apisun-production-8d96.up.railway.app/api/ddvipro"
 SYNC_ENDPOINT = "https://apisun-production-8d96.up.railway.app/api/update-prediction"
 
-# LINK MONGODB CỦA BRO (Đã lắp pass chuẩn)[cite: 3]
+# LINK MONGODB CỦA BRO
 MONGO_URI = "mongodb+srv://huylog333_db_user:engL1VIN3XA7egZY@cluster0.2myhlng.mongodb.net/?appName=Cluster0"
 
 HISTORY_MAX = 200          
-REQUIRED_LEN = 13  # Bỏ 13 phiên đầu để lấy đủ chuỗi TX[cite: 4]
+REQUIRED_LEN = 13  # Bỏ 13 phiên đầu để lấy đủ chuỗi TX
 
-# 🛠️ KẾT NỐI MONGODB THAY CHO FIREBASE[cite: 3]
+# 🛠️ KẾT NỐI MONGODB THAY CHO FIREBASE
 try:
     client = MongoClient(MONGO_URI)
     db = client['sunwin_database']
@@ -41,7 +41,7 @@ def keep_alive():
     return "🔥 AI Server v6 FINAL - MONGODB STABLE + FULL LOGIC..."
 
 # ==========================================
-# 🧠 LÕI 1: MODULO 11 + HASH CONFIDENCE[cite: 4]
+# 🧠 LÕI 1: MODULO 11 + HASH CONFIDENCE
 # ==========================================
 def get_confidence(v1, v2, v3):
     raw_string = f"{v1}-{v2}-{v3}"
@@ -67,7 +67,7 @@ def predict_tx(v1, v2, v3):
     return result, conf
 
 # ==========================================
-# 🧠 LÕI 2: TRỌNG SỐ CHUỖI 13 VÁN (TỪ CŨ TỚI MỚI)[cite: 4]
+# 🧠 LÕI 2: TRỌNG SỐ CHUỖI 13 VÁN (TỪ CŨ TỚI MỚI)
 # ==========================================
 def phan_tich_chuoi_weighted(chuoi):
     weights = [1.5**i for i in range(len(chuoi))]
@@ -82,7 +82,7 @@ def du_doan_tu_chuoi(chuoi_50):
     return "XONG", perc_tai, perc_xiu
 
 # ==========================================
-# 🧠 LỌC BỆT DÀI (PRE-PROCESSING)[cite: 4]
+# 🧠 LỌC BỆT DÀI (PRE-PROCESSING)
 # ==========================================
 def loai_bo_bet_dai(chuoi_kq, max_streak=5):
     if not chuoi_kq: return []
@@ -106,7 +106,7 @@ def loai_bo_bet_dai(chuoi_kq, max_streak=5):
     return cleaned
 
 # ==========================================
-# 🧠 LÕI 3A: MẪU CẦU XÚC XẮC 100 VÁN (DẠNG + ĐIỂM)[cite: 4]
+# 🧠 LÕI 3A: MẪU CẦU XÚC XẮC 100 VÁN (DẠNG + ĐIỂM)
 # ==========================================
 def predict_maucau_diem(list_tong_100, w_m4, w_m3):
     if len(list_tong_100) < 4:
@@ -135,7 +135,7 @@ def predict_maucau_diem(list_tong_100, w_m4, w_m3):
     return diem_tai, diem_xiu, mc_log
 
 # ==========================================
-# 🧠 LÕI 3B: MẪU CẦU KÝ TỰ T/X (4-6 KÝ TỰ TRONG 50 VÁN)[cite: 4]
+# 🧠 LÕI 3B: MẪU CẦU KÝ TỰ T/X (4-6 KÝ TỰ TRONG 50 VÁN)
 # ==========================================
 def predict_maucau_tx_diem(chuoi_50_kq, w_tx):
     # LỌC BỆT DÀI TRƯỚC KHI QUÉT MẪU
@@ -170,7 +170,7 @@ def predict_maucau_tx_diem(chuoi_50_kq, w_tx):
     return round(t_pts, 1), round(x_pts, 1), mc_tx_log or "[]"
 
 # ==========================================
-# 🤖 LỚP ĐIỀU KHIỂN CHÍNH[cite: 4]
+# 🤖 LỚP ĐIỀU KHIỂN CHÍNH
 # ==========================================
 class SunwinLogic_Merged:
     def __init__(self):
@@ -204,7 +204,6 @@ class SunwinLogic_Merged:
 
     def load_data(self):
         try:
-            # Chuyển từ Firebase db.reference sang MongoDB find_one[cite: 3, 4]
             doc = collection.find_one({'config': 'history_array'})
             return doc['data'] if doc and 'data' in doc else []
         except Exception as e:
@@ -213,7 +212,6 @@ class SunwinLogic_Merged:
 
     def save_data(self, data):
         try:
-            # Chuyển từ Firebase db.reference sang MongoDB update_one[cite: 3, 4]
             collection.update_one({'config': 'history_array'}, {'$set': {'data': data[-HISTORY_MAX:]}}, upsert=True)
         except Exception as e:
             print(f"❌ LỖI LƯU MONGODB: {e}")
@@ -248,7 +246,7 @@ class SunwinLogic_Merged:
         except: pass
 
     # ==========================================
-    # ⚙️ OPTUNA: TỐI ƯU HÓA[cite: 4]
+    # ⚙️ OPTUNA: TỐI ƯU HÓA
     # ==========================================
     def run_optuna_tuning(self, data):
         if len(data) < 30: return 
@@ -335,7 +333,7 @@ class SunwinLogic_Merged:
             # --- MA TRẬN BẺ CẦU LINH HOẠT THEO WINRATE ---
             current_wr = (self.total_won / self.total_played * 100) if self.total_played > 0 else 50
             
-            # Tính ngưỡng bẻ cầu động (Nâng nhẹ đáy lên 3 để đỡ bị bẻ quá nhạy khi WR thấp)[cite: 4]
+            # Tính ngưỡng bẻ cầu động (Nâng nhẹ đáy lên 3 để đỡ bị bẻ quá nhạy khi WR thấp)
             if current_wr >= 55:
                 nguong_be_cau = 4
             else:
@@ -458,7 +456,7 @@ class SunwinLogic_Merged:
         print(f"{'='*85}\n")
 
     def run(self):
-        print("🚀 Khởi động TOOL v6 (MONGODB ACTIVE)...")[cite: 3]
+        print("🚀 Khởi động TOOL v6 (MONGODB ACTIVE)...")
         while True:
             try:
                 res = requests.get(API_ENDPOINT, timeout=3)
@@ -488,3 +486,4 @@ class SunwinLogic_Merged:
 if __name__ == "__main__":
     threading.Thread(target=lambda: SunwinLogic_Merged().run(), daemon=True).start()
     app.run(host='0.0.0.0', port=int(os.environ.get('PORT', 10000)))
+```[cite: 4]
