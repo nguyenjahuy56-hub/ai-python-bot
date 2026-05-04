@@ -332,13 +332,14 @@ class SunwinLogic_Merged:
         note = ""
         chot_cuoi = chot_goc
         
+        # Đã comment out phần bắt ép bẻ Tài >= 60%
         # 🛡️ Rule bẻ tự động cho Tài mốc cao (>= 60%)
-        if chot_goc == "TÀI" and conf_percent >= 60:
-            chot_cuoi = "XỈU"
-            note = f" (⚠️ Logic báo bẻ: Tài {conf_percent}% có độ ảo cao -> ÉP BẺ SANG XỈU)"
+        # if chot_goc == "TÀI" and conf_percent >= 60:
+        #     chot_cuoi = "XỈU"
+        #     note = f" (⚠️ Logic báo bẻ: Tài {conf_percent}% có độ ảo cao -> ÉP BẺ SANG XỈU)"
             
         # 🔄 Áp dụng Ma trận bẻ cầu (Gãy 4 / Đúng 4)
-        elif self.bait_matrix[matrix_key][current_bucket]:
+        if self.bait_matrix[matrix_key][current_bucket]:
             chot_cuoi = "XỈU" if chot_goc == "TÀI" else "TÀI"
             note = f" (⚠️ {matrix_key} mốc {current_bucket}% đang bị lừa -> ÉP BẺ SANG {chot_cuoi})"
             
