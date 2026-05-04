@@ -57,7 +57,7 @@ def predict_tx(v1, v2, v3):
 # 🧠 LÕI 2: TRỌNG SỐ CHUỖI 13 VÁN (TỪ CŨ TỚI MỚI)
 # ==========================================
 def phan_tich_chuoi_weighted(chuoi):
-    weights = [2**i for i in range(len(chuoi))]
+    weights = [1.25**i for i in range(len(chuoi))]
     tong_weight = sum(weights)
     tai = sum(w for x, w in zip(chuoi, weights) if x == "T")
     xiu = sum(w for x, w in zip(chuoi, weights) if x == "X")
