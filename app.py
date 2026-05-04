@@ -7,7 +7,7 @@ import threading
 import hashlib
 import optuna
 import firebase_admin
-from firebase_admin import db
+from firebase_admin import credentials, db
 from flask import Flask
 
 # Tắt log rác của Optuna
@@ -19,23 +19,22 @@ optuna.logging.set_verbosity(optuna.logging.WARNING)
 API_ENDPOINT = "https://apisun-production-8d96.up.railway.app/api/ddvipro"
 SYNC_ENDPOINT = "https://apisun-production-8d96.up.railway.app/api/update-prediction"
 
-# LINK DATABASE & SECRET KEY
+# LINK DATABASE FIREBASE CỦA BRO
 FIREBASE_DB_URL = "https://tool-ai-sunwin-default-rtdb.asia-southeast1.firebasedatabase.app/"
-DATABASE_SECRET = "v2D5kyo2PG3M4zi3gp4z4N1gite7Fk1QmVvEQsdw"
 
 HISTORY_MAX = 200          
 REQUIRED_LEN = 13  # Bỏ 13 phiên đầu để lấy đủ chuỗi TX       
 
-# 🛠️ CÁCH KẾT NỐI MỚI: DÙNG DATABASE SECRET BẤT TỬ
+# 🛠️ KẾT NỐI FIREBASE BẰNG FILE JSON CHUẨN (ĐƯỜNG DẪN TUYỆT ĐỐI)
 try:
-    firebase_admin.initialize_app(options={
-        'databaseURL': FIREBASE_DB_URL,
-        'databaseAuthVariableOverride': {
-            'uid': 'my-service-worker'
-        }
-    })
-    db.reference('/').authenticate(DATABASE_SECRET)
-    print("✅ Kết nối Firebase Cloud BẰNG SECRET thành công! Không lo lỗi file JSON nữa.")
+    if not firebase_admin._apps:
+        # Ép nó tìm đúng vị trí file bất chấp server chạy ở thư mục nào
+        current_dir = os.path.dirname(os.path.abspath(__file__))
+        key_path = os.path.join(current_dir, "firebase_key.json")
+        
+        cred = credentials.Certificate(key_path)
+        firebase_admin.initialize_app(cred, {'databaseURL': FIREBASE_DB_URL})
+        print("✅ Kết nối Firebase Cloud BẰNG FILE JSON thành công! (Tuyệt đối)")
 except Exception as e:
     print(f"❌❌❌ LỖI KHỞI TẠO FIREBASE: {e}")
 
@@ -43,7 +42,7 @@ app = Flask(__name__)
 
 @app.route('/')
 def keep_alive():
-    return "🔥 AI Server v6 FINAL - FIREBASE SECRET + OPTUNA 20 + FULL LOGIC..."
+    return "🔥 AI Server v6 FINAL - FIREBASE JSON + OPTUNA 20 + FULL LOGIC..."
 
 # ==========================================
 # 🧠 LÕI 1: MODULO 11 + HASH CONFIDENCE
@@ -463,7 +462,7 @@ class SunwinLogic_Merged:
         print(f"{'='*85}\n")
 
     def run(self):
-        print("🚀 Khởi động TOOL v6 (Firebase Secret + Full Logic)...")
+        print("🚀 Khởi động TOOL v6 (Firebase JSON + Full Logic)...")
         while True:
             try:
                 res = requests.get(API_ENDPOINT, timeout=3)
