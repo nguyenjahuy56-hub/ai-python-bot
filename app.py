@@ -486,4 +486,3 @@ class SunwinLogic_Merged:
 if __name__ == "__main__":
     threading.Thread(target=lambda: SunwinLogic_Merged().run(), daemon=True).start()
     app.run(host='0.0.0.0', port=int(os.environ.get('PORT', 10000)))
-```[cite: 4]
