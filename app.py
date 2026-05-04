@@ -24,7 +24,7 @@ app = Flask(__name__)
 
 @app.route('/')
 def keep_alive():
-    return "🔥 AI Server v6 - MODULO + TRỌNG SỐ + MẪU KÉP + BẺ CẦU LINH HOẠT THEO WINRATE & LỌC BỆT DÀI..."
+    return "🔥 AI Server v6 - ANTI DESYNC + MODULO + TRỌNG SỐ + MẪU KÉP + BẺ CẦU..."
 
 # ==========================================
 # 🧠 LÕI 1: MODULO 11 + HASH CONFIDENCE
@@ -56,7 +56,7 @@ def predict_tx(v1, v2, v3):
 # 🧠 LÕI 2: TRỌNG SỐ CHUỖI 13 VÁN (TỪ CŨ TỚI MỚI)
 # ==========================================
 def phan_tich_chuoi_weighted(chuoi):
-    weights = [1.25**i for i in range(len(chuoi))]
+    weights = [1.5**i for i in range(len(chuoi))]
     tong_weight = sum(weights)
     tai = sum(w for x, w in zip(chuoi, weights) if x == "T")
     xiu = sum(w for x, w in zip(chuoi, weights) if x == "X")
@@ -169,6 +169,7 @@ class SunwinLogic_Merged:
         self.total_played = 0
         self.total_won = 0
         self.last_final_pred = None 
+        self.predicted_session_id = None # BỘ NHỚ LƯU PHIÊN DỰ ĐOÁN (Chống lệch)
         self.history_predictions = {}
         
         # --- THAM SỐ TỐI ƯU CỦA OPTUNA ---
@@ -301,58 +302,60 @@ class SunwinLogic_Merged:
         data.append({'phien': phien, 'dice': dice, 'tong': tong, 'kq': actual_full})
         self.save_data(data)
         
-        # --- THỐNG KÊ & TỐI ƯU ---
-        if self.last_final_pred is not None:
+        # --- CHỈ ĐÁNH GIÁ THẮNG/THUA NẾU KHỚP ĐÚNG PHIÊN ĐÃ DỰ ĐOÁN ---
+        if self.last_final_pred is not None and self.predicted_session_id == phien:
             self.total_played += 1
             self.tune_counter += 1
             
             if self.last_final_pred == actual_full:
                 self.total_won += 1
                 wr_percent = (self.total_won / self.total_played) * 100
-                print(f"💰 Ván trước HÚP {actual_full}! (Tỉ lệ WR: {self.total_won}/{self.total_played} - {wr_percent:.1f}%)")
+                print(f"💰 Ván {phien} HÚP {actual_full}! (Tỉ lệ WR: {self.total_won}/{self.total_played} - {wr_percent:.1f}%)")
             else:
                 wr_percent = (self.total_won / self.total_played) * 100
-                print(f"💀 Ván trước GÃY! (Tỉ lệ WR: {self.total_won}/{self.total_played} - {wr_percent:.1f}%)")
+                print(f"💀 Ván {phien} GÃY! (Tỉ lệ WR: {self.total_won}/{self.total_played} - {wr_percent:.1f}%)")
                 
-            if self.tune_counter >= 8:
+            if self.tune_counter >= 20:
                 self.tune_counter = 0
                 self.run_optuna_tuning(data)
         
-        # --- MA TRẬN BẺ CẦU LINH HOẠT THEO WINRATE ---
-        current_wr = (self.total_won / self.total_played * 100) if self.total_played > 0 else 50
-        
-        # Tính ngưỡng bẻ cầu động
-        if current_wr >= 55:
-            nguong_be_cau = 4
-        elif current_wr >= 50:
-            nguong_be_cau = 3
-        else:
-            nguong_be_cau = 2
-
-        if self.last_raw_key is not None and self.last_raw_bucket is not None:
-            raw_was_correct = (self.last_raw_pred == actual_full) 
-            matrix_key = self.last_raw_key
-            bucket = self.last_raw_bucket
-            streak = self.bucket_streaks[matrix_key][bucket]
+            # --- MA TRẬN BẺ CẦU LINH HOẠT THEO WINRATE ---
+            current_wr = (self.total_won / self.total_played * 100) if self.total_played > 0 else 50
             
-            if not self.bait_matrix[matrix_key][bucket]:
-                if not raw_was_correct:
-                    streak['loss'] += 1
-                    streak['win'] = 0
-                    if streak['loss'] >= nguong_be_cau:
-                        self.bait_matrix[matrix_key][bucket] = True
-                        streak['loss'] = 0
-                        print(f"🚨 [MA TRẬN] {matrix_key} {bucket}% GÃY {nguong_be_cau} TAY (WR: {current_wr:.1f}%)! BẬT CHẾ ĐỘ BẺ CẦU.")
-                else: streak['loss'] = 0
+            # Tính ngưỡng bẻ cầu động (Nâng nhẹ đáy lên 3 để đỡ bị bẻ quá nhạy khi WR thấp)
+            if current_wr >= 55:
+                nguong_be_cau = 4
             else:
-                if raw_was_correct:
-                    streak['win'] += 1
-                    streak['loss'] = 0
-                    if streak['win'] >= nguong_be_cau:
-                        self.bait_matrix[matrix_key][bucket] = False
+                nguong_be_cau = 3
+
+            if self.last_raw_key is not None and self.last_raw_bucket is not None:
+                raw_was_correct = (self.last_raw_pred == actual_full) 
+                matrix_key = self.last_raw_key
+                bucket = self.last_raw_bucket
+                streak = self.bucket_streaks[matrix_key][bucket]
+                
+                if not self.bait_matrix[matrix_key][bucket]:
+                    if not raw_was_correct:
+                        streak['loss'] += 1
                         streak['win'] = 0
-                        print(f"✅ [MA TRẬN] Cầu {matrix_key} {bucket}% chuẩn form {nguong_be_cau} tay! TẮT BẺ CẦU.")
-                else: streak['win'] = 0
+                        if streak['loss'] >= nguong_be_cau:
+                            self.bait_matrix[matrix_key][bucket] = True
+                            streak['loss'] = 0
+                            print(f"🚨 [MA TRẬN] {matrix_key} {bucket}% GÃY {nguong_be_cau} TAY (WR: {current_wr:.1f}%)! BẬT CHẾ ĐỘ BẺ CẦU.")
+                    else: streak['loss'] = 0
+                else:
+                    if raw_was_correct:
+                        streak['win'] += 1
+                        streak['loss'] = 0
+                        if streak['win'] >= nguong_be_cau:
+                            self.bait_matrix[matrix_key][bucket] = False
+                            streak['win'] = 0
+                            print(f"✅ [MA TRẬN] Cầu {matrix_key} {bucket}% chuẩn form {nguong_be_cau} tay! TẮT BẺ CẦU.")
+                    else: streak['win'] = 0
+                    
+        elif self.predicted_session_id is not None and self.predicted_session_id != phien:
+            print(f"⚠️ [LỆCH PHIÊN] Bỏ qua chấm điểm! Tool dự đoán cho phiên {self.predicted_session_id} nhưng API trả kết quả phiên {phien}.")
+            
         return len(data)
 
     def analyze_next_round(self, next_session_id):
@@ -422,6 +425,7 @@ class SunwinLogic_Merged:
         self.last_raw_bucket = current_bucket
         self.last_final_pred = chot_cuoi
         self.history_predictions[str(next_session_id)] = chot_cuoi
+        self.predicted_session_id = next_session_id # <--- GHI NHỚ LẠI PHIÊN MÌNH VỪA CHỐT
         
         print(f"{'-'*85}")
         wr_str = f" [WR Hiện tại: {(self.total_won/self.total_played)*100:.1f}%]" if self.total_played > 0 else ""
@@ -432,7 +436,7 @@ class SunwinLogic_Merged:
         print(f"{'='*85}\n")
 
     def run(self):
-        print("🚀 Khởi động TOOL v6 (Modulo + Trọng số + Mẫu Kép + Bẻ Cầu Linh Hoạt + Lọc Bệt)...")
+        print("🚀 Khởi động TOOL v6 (Anti-Desync + Mẫu Kép + Bẻ Cầu Linh Hoạt)...")
         while True:
             try:
                 res = requests.get(API_ENDPOINT, timeout=3)
