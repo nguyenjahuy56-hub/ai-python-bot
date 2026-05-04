@@ -25,7 +25,7 @@ app = Flask(__name__)
 
 @app.route('/')
 def keep_alive():
-    return "🔥 AI Server - TỔNG HỢP MODULO + TRỌNG SỐ 13 + OPTUNA ALL-IN..."
+    return "🔥 AI Server v5 - MODULO + TRỌNG SỐ + MẪU XÚC XẮC + MẪU TX (ANTI-NOISE)..."
 
 # ==========================================
 # 🧠 LÕI 1: MODULO 11 + HASH CONFIDENCE
@@ -63,60 +63,72 @@ def phan_tich_chuoi_weighted(chuoi):
     xiu = sum(w for x, w in zip(chuoi, weights) if x == "X")
     return round(tai / tong_weight * 100, 1), round(xiu / tong_weight * 100, 1)
 
-def dem_chuoi_lien_tiep(chuoi, ky_tu):
-    count = 0
-    for c in reversed(chuoi):
-        if c == ky_tu: count += 1
-        else: break
-    return count
-
-def phan_tich_chu_ky(chuoi):
-    for l in [5, 4, 3, 2]:
-        if len(chuoi) >= 2*l and chuoi[-l:] == chuoi[-2*l:-l]: return chuoi[-1]
-    return None
-
-def la_cau_dan_xen(chuoi):
-    if len(chuoi) < 6: return False
-    return all(chuoi[i] != chuoi[i+1] for i in range(-6, -1))
-
 def du_doan_tu_chuoi(chuoi_50):
     chuoi = chuoi_50[-13:] if len(chuoi_50) >= 13 else chuoi_50
     perc_tai, perc_xiu = phan_tich_chuoi_weighted(chuoi)
-    
-    # Ở đây chúng ta chỉ lấy tỷ lệ phần trăm (perc_tai, perc_xiu) làm base trọng số
-    # Các logic cộng điểm phụ của chuỗi được giản lược tập trung vào sức mạnh tỷ lệ.
     return "XONG", perc_tai, perc_xiu
 
 # ==========================================
-# 🧠 LÕI 3: MẪU CẦU XÚC XẮC 100 VÁN (DẠNG + ĐIỂM)
+# 🧠 LÕI 3A: MẪU CẦU XÚC XẮC 100 VÁN (DẠNG + ĐIỂM)
 # ==========================================
-def predict_maucau_diem(list_tong_100, w_m4=3, w_m3=1):
+def predict_maucau_diem(list_tong_100, w_m4, w_m3):
     if len(list_tong_100) < 4:
         return 0, 0, "[]"
 
     last_3 = list_tong_100[-3:]
     last_2 = list_tong_100[-2:]
 
-    t4, x4 = 0, 0
+    t4, x4, t3, x3 = 0, 0, 0, 0
     # Quét Mẫu 4
     for i in range(len(list_tong_100) - 3):
         if list_tong_100[i:i+3] == last_3:
             if list_tong_100[i+3] > 10: t4 += 1
             else: x4 += 1
 
-    t3, x3 = 0, 0
     # Quét Mẫu 3
     for i in range(len(list_tong_100) - 2):
         if list_tong_100[i:i+2] == last_2:
             if list_tong_100[i+2] > 10: t3 += 1
             else: x3 += 1
 
-    # Trả về ĐIỂM SỐ ĐỂ CỘNG VÀO DỰ ĐOÁN (Không phải dự đoán cứng)
     diem_tai = (t4 * w_m4) + (t3 * w_m3)
     diem_xiu = (x4 * w_m4) + (x3 * w_m3)
     mc_log = f"[{'-'.join(map(str, last_3))}]"
     
     return diem_tai, diem_xiu, mc_log
+
+# ==========================================
+# 🧠 LÕI 3B: MẪU CẦU KÝ TỰ T/X (4-6 KÝ TỰ TRONG 50 VÁN)
+# ==========================================
+def predict_maucau_tx_diem(chuoi_50_kq, w_tx):
+    if len(chuoi_50_kq) < 7: 
+        return 0.0, 0.0, "[]"
+
+    t_pts, x_pts = 0.0, 0.0
+    # Trọng số độ uy tín: Mẫu càng dài, hệ số nhân càng lớn
+    patterns = [{'len': 6, 'mult': 3.0}, {'len': 5, 'mult': 2.0}, {'len': 4, 'mult': 1.0}]
+    mc_tx_log = ""
+    
+    for p in patterns:
+        p_len, mult = p['len'], p['mult']
+        if len(chuoi_50_kq) <= p_len: continue
+        
+        target = chuoi_50_kq[-p_len:]
+        t_count, x_count = 0, 0
+        
+        # Quét lại trong 50 ván quá khứ
+        for i in range(len(chuoi_50_kq) - p_len):
+            if chuoi_50_kq[i:i+p_len] == target:
+                next_val = chuoi_50_kq[i+p_len]
+                if next_val == "T": t_count += 1
+                else: x_count += 1
+        
+        if t_count > 0 or x_count > 0:
+            t_pts += t_count * mult * w_tx
+            x_pts += x_count * mult * w_tx
+            if not mc_tx_log: mc_tx_log = f"[{''.join(target)}]" # Lấy log mẫu dài nhất tìm được
+        
+    return round(t_pts, 1), round(x_pts, 1), mc_tx_log or "[]"
 
 # ==========================================
 # 🤖 LỚP ĐIỀU KHIỂN CHÍNH
@@ -131,11 +143,12 @@ class SunwinLogic_Merged:
         self.last_final_pred = None 
         self.history_predictions = {}
         
-        # --- THAM SỐ TỐI ƯU CỦA OPTUNA (4 YẾU TỐ) ---
-        self.w_mod = 1    # Trọng số Logic Modulo 11
-        self.w_chuoi = 1  # Trọng số Logic Chuỗi 13 ván
-        self.w_m4 = 3     # Điểm mẫu cầu độ dài 4
-        self.w_m3 = 1     # Điểm mẫu cầu độ dài 3
+        # --- THAM SỐ TỐI ƯU CỦA OPTUNA (5 YẾU TỐ - CHUYỂN SANG FLOAT ĐỂ CHỐNG NHIỄU) ---
+        self.w_mod = 1.0    
+        self.w_chuoi = 1.0  
+        self.w_m4 = 1.0     
+        self.w_m3 = 0.5     
+        self.w_tx = 1.0     
         
         self.tune_counter = 0
         
@@ -166,8 +179,7 @@ class SunwinLogic_Merged:
         try:
             with open(self.file_data, 'w', encoding='utf-8') as f: 
                 json.dump(data[-HISTORY_MAX:], f, indent=2)
-        except Exception as e: 
-            pass
+        except Exception: pass
 
     def get_confidence_bucket(self, percent):
         if percent >= 100: return 100
@@ -199,18 +211,20 @@ class SunwinLogic_Merged:
         except: pass
 
     # ==========================================
-    # ⚙️ OPTUNA: TỐI ƯU HÓA CẢ 4 TRỌNG SỐ (CỘNG CHIA 2 + MẪU CẦU)
+    # ⚙️ OPTUNA: TỐI ƯU HÓA 5 TRỌNG SỐ VỚI SUGGEST_FLOAT
     # ==========================================
     def run_optuna_tuning(self, data):
         if len(data) < 30: return 
         
-        print("\n🔄 [OPTUNA] Đang khởi chạy tinh chỉnh: Modulo + Trọng số TX + Mẫu Cầu...")
+        print("\n🔄 [OPTUNA] Đang dò tìm trọng số mịn (Float) để chống nhiễu...")
         
         def objective(trial):
-            w_mod = trial.suggest_int('w_mod', 1, 10)
-            w_chuoi = trial.suggest_int('w_chuoi', 1, 10)
-            w_m4 = trial.suggest_int('w_m4', 1, 10)
-            w_m3 = trial.suggest_int('w_m3', 1, 10)
+            # Dùng số thực để điều chỉnh biên độ cộng điểm nhỏ gọn, không bị giật cục
+            w_mod = trial.suggest_float('w_mod', 0.5, 3.0)
+            w_chuoi = trial.suggest_float('w_chuoi', 0.5, 3.0)
+            w_m4 = trial.suggest_float('w_m4', 0.1, 2.0)
+            w_m3 = trial.suggest_float('w_m3', 0.1, 1.0)
+            w_tx = trial.suggest_float('w_tx', 0.1, 2.0)
             
             test_len = min(20, len(data) - 13)
             correct = 0
@@ -225,31 +239,38 @@ class SunwinLogic_Merged:
                 mod_xiu = mod_conf if mod_pred == "XỈU" else (100 - mod_conf)
                 
                 # 2. Chuỗi TX
-                chuoi_50 = ["T" if x['tong'] > 10 else "X" for x in past_data[-50:]]
-                _, chuoi_tai, chuoi_xiu = du_doan_tu_chuoi(chuoi_50)
+                chuoi_50_kq = ["T" if x['tong'] > 10 else "X" for x in past_data[-50:]]
+                _, chuoi_tai, chuoi_xiu = du_doan_tu_chuoi(chuoi_50_kq)
                 
-                # 3. Mẫu Cầu
+                # 3. Base Hợp nhất
+                avg_tai = ((mod_tai * w_mod) + (chuoi_tai * w_chuoi)) / (w_mod + w_chuoi)
+                avg_xiu = ((mod_xiu * w_mod) + (chuoi_xiu * w_chuoi)) / (w_mod + w_chuoi)
+                
+                # 4. Tính điểm Mẫu cầu
                 list_tong_100 = [x['tong'] for x in past_data[-100:]]
-                mc_tai, mc_xiu, _ = predict_maucau_diem(list_tong_100, w_m4, w_m3)
+                mc_xx_tai, mc_xx_xiu, _ = predict_maucau_diem(list_tong_100, w_m4, w_m3)
+                mc_tx_tai, mc_tx_xiu, _ = predict_maucau_tx_diem(chuoi_50_kq, w_tx)
                 
-                # 4. Tính toán hợp nhất (Cộng chia + Điểm Mẫu cầu)
-                avg_tai = ((mod_tai * w_mod) + (chuoi_tai * w_chuoi)) / (w_mod + w_chuoi) + mc_tai
-                avg_xiu = ((mod_xiu * w_mod) + (chuoi_xiu * w_chuoi)) / (w_mod + w_chuoi) + mc_xiu
+                # 5. Cap limit điểm cộng để không làm hỏng Base
+                bonus_tai = min(20.0, mc_xx_tai + mc_tx_tai)
+                bonus_xiu = min(20.0, mc_xx_xiu + mc_tx_xiu)
                 
-                pred = "TÀI" if avg_tai > avg_xiu else "XỈU"
+                pred = "TÀI" if (avg_tai + bonus_tai) > (avg_xiu + bonus_xiu) else "XỈU"
                 actual = "TÀI" if data[i]['tong'] > 10 else "XỈU"
                 if pred == actual:
                     correct += 1
             return correct
 
         study = optuna.create_study(direction="maximize")
-        study.optimize(objective, n_trials=40)
+        study.optimize(objective, n_trials=35)
         
-        self.w_mod = study.best_params['w_mod']
-        self.w_chuoi = study.best_params['w_chuoi']
-        self.w_m4 = study.best_params['w_m4']
-        self.w_m3 = study.best_params['w_m3']
-        print(f"✅ [OPTUNA] Xong! W_Mod:{self.w_mod} | W_Chuoi:{self.w_chuoi} | Mẫu4:{self.w_m4} | Mẫu3:{self.w_m3}\n")
+        self.w_mod = round(study.best_params['w_mod'], 2)
+        self.w_chuoi = round(study.best_params['w_chuoi'], 2)
+        self.w_m4 = round(study.best_params['w_m4'], 2)
+        self.w_m3 = round(study.best_params['w_m3'], 2)
+        self.w_tx = round(study.best_params['w_tx'], 2)
+        
+        print(f"✅ [OPTUNA] Xong! W_Mod:{self.w_mod} | W_Chuoi:{self.w_chuoi} | M4:{self.w_m4} | M3:{self.w_m3} | M_TX:{self.w_tx}\n")
 
     def inject_new_data(self, phien, dice, tong):
         actual_full = "TÀI" if tong > 10 else "XỈU"
@@ -271,7 +292,7 @@ class SunwinLogic_Merged:
                 wr_percent = (self.total_won / self.total_played) * 100
                 print(f"💀 Ván trước GÃY! (Tỉ lệ WR: {self.total_won}/{self.total_played} - {wr_percent:.1f}%)")
                 
-            # Đạt 8 ván (như cấu hình cũ) -> Tune Optuna
+            # Đạt 8 ván -> Tune Optuna
             if self.tune_counter >= 8:
                 self.tune_counter = 0
                 self.run_optuna_tuning(data)
@@ -322,23 +343,28 @@ class SunwinLogic_Merged:
         mod_tai = mod_conf if mod_pred == "TÀI" else (100 - mod_conf)
         mod_xiu = mod_conf if mod_pred == "XỈU" else (100 - mod_conf)
 
-        # 2. Dữ liệu Trọng Số 13 Ván
-        chuoi_50 = ["T" if item['tong'] > 10 else "X" for item in data[-50:]]
-        _, chuoi_tai, chuoi_xiu = du_doan_tu_chuoi(chuoi_50)
+        # 2. Dữ liệu Trọng Số 13 Ván & Mẫu Cầu TX
+        chuoi_50_kq = ["T" if item['tong'] > 10 else "X" for item in data[-50:]]
+        _, chuoi_tai, chuoi_xiu = du_doan_tu_chuoi(chuoi_50_kq)
 
-        # 3. Tính toán Chia 2 Tỉ lệ (Có áp dụng Optuna weights)
+        # 3. Tính toán Chia 2 Tỉ lệ Base
         chia_tai = ((mod_tai * self.w_mod) + (chuoi_tai * self.w_chuoi)) / (self.w_mod + self.w_chuoi)
         chia_xiu = ((mod_xiu * self.w_mod) + (chuoi_xiu * self.w_chuoi)) / (self.w_mod + self.w_chuoi)
 
-        # 4. Cộng Điểm Mẫu Cầu
+        # 4. Điểm Mẫu Cầu
         list_tong_100 = [item['tong'] for item in data[-100:]]
-        mc_tai, mc_xiu, mc_log = predict_maucau_diem(list_tong_100, self.w_m4, self.w_m3)
+        mc_xx_tai, mc_xx_xiu, mc_xx_log = predict_maucau_diem(list_tong_100, self.w_m4, self.w_m3)
+        mc_tx_tai, mc_tx_xiu, mc_tx_log = predict_maucau_tx_diem(chuoi_50_kq, self.w_tx)
 
-        # Hợp nhất Toán học cuối cùng
-        final_tai = chia_tai + mc_tai
-        final_xiu = chia_xiu + mc_xiu
+        # BỘ LỌC NHIỄU (Cap limit max 20)
+        bonus_tai = min(20.0, mc_xx_tai + mc_tx_tai)
+        bonus_xiu = min(20.0, mc_xx_xiu + mc_tx_xiu)
 
-        # CHỐT GỐC (Bên nào lớn hơn đoán bên đó)
+        # Hợp nhất Toán học
+        final_tai = chia_tai + bonus_tai
+        final_xiu = chia_xiu + bonus_xiu
+
+        # CHỐT GỐC
         if final_tai > final_xiu:
             chot_goc = "TÀI"
             conf_percent = min(100.0, round(final_tai, 1))
@@ -349,25 +375,25 @@ class SunwinLogic_Merged:
         matrix_key = chot_goc
         current_bucket = self.get_confidence_bucket(conf_percent)
 
-        # In Log Logic
-        print(f"📘 [LOGIC: HỢP NHẤT TRỌNG SỐ & MODULO]")
+        # In Log
+        print(f"📘 [LOGIC: HỢP NHẤT TRỌNG SỐ, MODULO & MẪU KÉP]")
         print(f"   => Modulo 11    : TÀI {mod_tai:.1f}% | XỈU {mod_xiu:.1f}%")
         print(f"   => Trọng số 13  : TÀI {chuoi_tai:.1f}% | XỈU {chuoi_xiu:.1f}%")
-        print(f"   => Tỉ lệ Chia 2 : TÀI {chia_tai:.1f}% | XỈU {chia_xiu:.1f}% (Đã nhân hệ số W)")
-        print(f"   => Điểm Mẫu Cầu : +{mc_tai} TÀI | +{mc_xiu} XỈU (Mẫu {mc_log})")
+        print(f"   => % Base Hợp nhất: TÀI {chia_tai:.1f}% | XỈU {chia_xiu:.1f}%")
+        print(f"   => Điểm Mẫu XX  : +{round(mc_xx_tai,1)} TÀI | +{round(mc_xx_xiu,1)} XỈU (Mẫu {mc_xx_log})")
+        print(f"   => Điểm Mẫu TX  : +{mc_tx_tai} TÀI | +{mc_tx_xiu} XỈU (Mẫu {mc_tx_log})")
         print(f"   => TỔNG KẾT     : Khớp logic {chot_goc} ({conf_percent}%)")
-        print(f"   => Optuna W     : [W_Mod:{self.w_mod} | W_Chuoi:{self.w_chuoi} | W_M4:{self.w_m4} | W_M3:{self.w_m3}]")
         print(f"   => Trạng thái   : [MỐC LƯU: {matrix_key} {current_bucket}%]")
 
         note = ""
         chot_cuoi = chot_goc
         
-        # Áp dụng Ma trận Bẻ
+        # Ma trận Bẻ
         if self.bait_matrix[matrix_key][current_bucket]:
             chot_cuoi = "XỈU" if chot_goc == "TÀI" else "TÀI"
             note = f" (⚠️ {matrix_key} mốc {current_bucket}% đang lừa -> ÉP BẺ SANG {chot_cuoi})"
         else:
-            note = f" (Vào theo phân tích chia 2 tỉ lệ & mẫu cầu gốc)"
+            note = f" (Vào theo phân tích hợp nhất đa tầng)"
 
         self.last_raw_pred = chot_goc
         self.last_raw_key = matrix_key
@@ -384,7 +410,7 @@ class SunwinLogic_Merged:
         print(f"{'='*85}\n")
 
     def run(self):
-        print("🚀 Khởi động TOOL (Modulo + Trọng số 13 ván + Cộng Điểm Mẫu Cầu + Optuna)...")
+        print("🚀 Khởi động TOOL v5 (Modulo + Trọng số 13 ván + Mẫu Kép Xúc Xắc/TX + Anti-Noise)...")
         while True:
             try:
                 res = requests.get(API_ENDPOINT, timeout=3)
