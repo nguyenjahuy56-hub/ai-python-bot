@@ -358,7 +358,7 @@ class SunwinLogic_Merged:
                     if raw_was_correct:
                         streak['win'] += 1
                         streak['loss'] = 0
-                        if streak['win'] >= nguong_be_cau:
+                        if streak['win'] >= 2:
                             self.bait_matrix[matrix_key][bucket] = False
                             streak['win'] = 0
                             print(f"✅ [MA TRẬN] Cầu {matrix_key} {bucket}% chuẩn form {nguong_be_cau} tay! TẮT BẺ CẦU.")
