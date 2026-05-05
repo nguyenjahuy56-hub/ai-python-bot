@@ -12,13 +12,31 @@ from flask import Flask
 optuna.logging.set_verbosity(optuna.logging.WARNING)
 
 # ==========================================
-# ⚙️ CONFIG HỆ THỐNG
+# ⚙️ CONFIG HỆ THỐNG & THÔNG TIN XÁC THỰC
 # ==========================================
 API_ENDPOINT = "https://apisun-production-8d96.up.railway.app/api/ddvipro"
 SYNC_ENDPOINT = "https://apisun-production-8d96.up.railway.app/api/update-prediction"
 
 # LINK MONGODB CỦA BRO
 MONGO_URI = "mongodb+srv://huylog333_db_user:engL1VIN3XA7egZY@cluster0.2myhlng.mongodb.net/?appName=Cluster0"
+
+# DỮ LIỆU XÁC THỰC (Đã được cập nhật theo yêu cầu)
+USER_AUTH_DATA = {
+    "accessToken": "467f7b98eb72487ca19273002cc07bf4",
+    "refreshToken": "a34c7dff4fd94f0fb8889fc8744be629.0fc0ea6755624a82a1597925c0efb43d",
+    "wsToken": "eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJnZW5kZXIiOjAsImNhblZpZXdTdGF0IjpmYWxzZSwiZGlzcGxheU5hbWUiOiJzb25ndmVkZW0yMCIsImJvdCI6MCwiaXNNZXJjaGFudCI6ZmFsc2UsInZlcmlmaWVkQmFua0FjY291bnQiOnRydWUsInBsYXlFdmVudExvYmJ5IjpmYWxzZSwiY3VzdG9tZXJJZCI6MjM5OTUzMjE1LCJhZmZJZCI6ImRlZmF1bHQiLCJiYW5uZWQiOmZhbHNlLCJicmFuZCI6InN1bi53aW4iLCJlbWFpbCI6IiIsInRpbWVzdGFtcCI6MTc3Nzk1NTYwMzA0NywibG9ja0dhbWVzIjpbXSwiYW1vdW50IjowLCJsb2NrQ2hhdCI6ZmFsc2UsInBob25lVmVyaWZpZWQiOnRydWUsImlwQWRkcmVzcyI6IjExMy4xNzUuMTM3LjE4MCIsIm11dGUiOmZhbHNlLCJhdmF0YXIiOiJodHRwczovL2ltYWdlcy5zd2luc2hvcC5uZXQvaW1hZ2VzL2F2YXRhci9hdmF0YXJfMTAucG5nIiwicGxhdGZvcm1JZCI6MiwidXNlcklkIjoiMDAzNzQwNjgtOGJmYi00OTU2LTliMTItMjg5M2MzMTA3MTYwIiwiZW1haWxWZXJpZmllZCI6bnVsbCwicmVnVGltZSI6MTc0NTU5MjY1NTgwNywicGhvbmUiOiI4NDMyOTY4OTk3MSIsImRlcG9zaXQiOnRydWUsInVzZXJuYW1lIjoiU0Nfc29uZ3ZlZGVtMTAifQ.O6qjN0boaqSDJVzjvzc4ZQfdylxzlhU76qCFwUprY9w",
+    "signature": "0AC751198C16DC4545E67C4F36CEEF54A4EE984436A11FB53F182E44F7BC61803BF17F00E749E0D01CEB679BDE72B85071861418BD938E783A3645E3EE45069EA849692BDF02900FBA0DB2F127B0BE72EAE40D642765DD7C04965B98562DDFE450255C9CBF8DF0EB02C2D999A25DD46CBAD32D1CA5470759741E955DDBCDE5BE",
+    "userId": "00374068-8bfb-4956-9b12-2893c3107160",
+    "username": "SC_songvedem10"
+}
+
+# Headers cho các requests nếu cần đính kèm Token
+HEADERS = {
+    "Authorization": f"Bearer {USER_AUTH_DATA['accessToken']}",
+    "wsToken": USER_AUTH_DATA['wsToken'],
+    "signature": USER_AUTH_DATA['signature'],
+    "Content-Type": "application/json"
+}
 
 HISTORY_MAX = 200          
 REQUIRED_LEN = 13  # Bỏ 13 phiên đầu để lấy đủ chuỗi TX
@@ -40,7 +58,7 @@ def keep_alive():
     return "🔥 AI Server v6 FINAL - MONGODB STABLE + FULL LOGIC..."
 
 # ==========================================
-# 🧠 LÕI 1: TRỌNG SỐ CHUỖI 13 VÁN (TỪ CŨ TỚI MỚI)[cite: 1]
+# 🧠 LÕI 1: TRỌNG SỐ CHUỖI 13 VÁN (TỪ CŨ TỚI MỚI)
 # ==========================================
 def phan_tich_chuoi_weighted(chuoi):
     weights = [1.5**i for i in range(len(chuoi))]
@@ -55,7 +73,7 @@ def du_doan_tu_chuoi(chuoi_50):
     return "XONG", perc_tai, perc_xiu
 
 # ==========================================
-# 🧠 LỌC BỆT DÀI (PRE-PROCESSING)[cite: 1]
+# 🧠 LỌC BỆT DÀI (PRE-PROCESSING)
 # ==========================================
 def loai_bo_bet_dai(chuoi_kq, max_streak=5):
     if not chuoi_kq: return []
@@ -146,17 +164,17 @@ def predict_maucau_tx_diem(chuoi_80_kq, w_tx):
     return round(t_pts, 1), round(x_pts, 1), mc_tx_log or "[]"
 
 # ==========================================
-# 🧠 LÕI 3: LOGIC XU HƯỚNG (TREND)[cite: 3, 4]
+# 🧠 LÕI 3: LOGIC XU HƯỚNG (TREND)
 # ==========================================
 def predict_trend_logic(chuoi_50_kq, w_trend):
     last_5 = chuoi_50_kq[-5:] if len(chuoi_50_kq) >= 5 else chuoi_50_kq
     t5 = sum(1 for x in last_5 if x == "T")
     x5 = sum(1 for x in last_5 if x == "X")
-    trend_score = (t5 - x5) * w_trend * 0.6 #[cite: 3]
+    trend_score = (t5 - x5) * w_trend * 0.6 
     return trend_score
 
 # ==========================================
-# 🧠 LÕI 4: LOGIC BẺ BỆT (SAU 3 TAY BỆT)[cite: 4]
+# 🧠 LÕI 4: LOGIC BẺ BỆT (SAU 3 TAY BỆT)
 # ==========================================
 def predict_be_bet_logic(chuoi_50_kq, w_be_bet):
     if len(chuoi_50_kq) < 3: return 0
@@ -185,8 +203,8 @@ class SunwinLogic_Merged:
         self.w_m5 = 1.0     
         self.w_m4 = 0.5     
         self.w_tx = 1.0     
-        self.w_trend = 1.0  #[cite: 3, 4]
-        self.w_be_bet = 1.0 # <--- LOGIC BẺ BỆT MỚI[cite: 4]
+        self.w_trend = 1.0  
+        self.w_be_bet = 1.0 
         
         self.tune_counter = 0
         
@@ -241,7 +259,8 @@ class SunwinLogic_Merged:
                 "win_rate": round(wr, 1), "total_played": self.total_played,
                 "history": history_list[::-1]
             }
-            requests.post(SYNC_ENDPOINT, json=payload, timeout=5)
+            # Gửi payload kèm theo headers chứa token (nếu backend yêu cầu)
+            requests.post(SYNC_ENDPOINT, json=payload, headers=HEADERS, timeout=5)
         except: pass
 
     # ==========================================
@@ -257,8 +276,8 @@ class SunwinLogic_Merged:
             w_m5 = trial.suggest_float('w_m5', 0.1, 2.0)
             w_m4 = trial.suggest_float('w_m4', 0.1, 1.0)
             w_tx = trial.suggest_float('w_tx', 0.1, 2.0)
-            w_trend = trial.suggest_float('w_trend', 0.1, 2.0) #[cite: 3, 4]
-            w_be_bet = trial.suggest_float('w_be_bet', 0.1, 5.0) #[cite: 4]
+            w_trend = trial.suggest_float('w_trend', 0.1, 2.0) 
+            w_be_bet = trial.suggest_float('w_be_bet', 0.1, 5.0) 
             
             test_len = min(20, len(data) - 13)
             correct = 0
@@ -266,7 +285,7 @@ class SunwinLogic_Merged:
             for i in range(len(data) - test_len, len(data)):
                 past_data = data[:i]
                 
-                # 1. Chuỗi TX[cite: 1]
+                # 1. Chuỗi TX
                 chuoi_50_kq = ["T" if x['tong'] > 10 else "X" for x in past_data[-50:]]
                 _, chuoi_tai, chuoi_xiu = du_doan_tu_chuoi(chuoi_50_kq)
                 
@@ -281,15 +300,15 @@ class SunwinLogic_Merged:
                 mc_xx_tai, mc_xx_xiu, _ = predict_maucau_diem(list_tong_130, w_m5, w_m4)
                 mc_tx_tai, mc_tx_xiu, _ = predict_maucau_tx_diem(chuoi_80_kq, w_tx)
 
-                # 4. Tính điểm Xu hướng[cite: 3, 4]
+                # 4. Tính điểm Xu hướng
                 trend_val = predict_trend_logic(chuoi_50_kq, w_trend)
                 
-                # 5. Tính điểm Bẻ bệt[cite: 4]
+                # 5. Tính điểm Bẻ bệt
                 be_bet_val = predict_be_bet_logic(chuoi_50_kq, w_be_bet)
                 
                 # 6. Cap limit điểm cộng
-                bonus_tai = min(20.0, mc_xx_tai + mc_tx_tai + (trend_val if trend_val > 0 else 0) + (be_bet_val if be_bet_val > 0 else 0)) #[cite: 4]
-                bonus_xiu = min(20.0, mc_xx_xiu + mc_tx_xiu + (abs(trend_val) if trend_val < 0 else 0) + (abs(be_bet_val) if be_bet_val < 0 else 0)) #[cite: 4]
+                bonus_tai = min(20.0, mc_xx_tai + mc_tx_tai + (trend_val if trend_val > 0 else 0) + (be_bet_val if be_bet_val > 0 else 0)) 
+                bonus_xiu = min(20.0, mc_xx_xiu + mc_tx_xiu + (abs(trend_val) if trend_val < 0 else 0) + (abs(be_bet_val) if be_bet_val < 0 else 0)) 
                 
                 pred = "TÀI" if (avg_tai + bonus_tai) > (avg_xiu + bonus_xiu) else "XỈU"
                 actual = "TÀI" if data[i]['tong'] > 10 else "XỈU"
@@ -304,8 +323,8 @@ class SunwinLogic_Merged:
         self.w_m5 = round(study.best_params['w_m5'], 2)
         self.w_m4 = round(study.best_params['w_m4'], 2)
         self.w_tx = round(study.best_params['w_tx'], 2)
-        self.w_trend = round(study.best_params['w_trend'], 2) #[cite: 3, 4]
-        self.w_be_bet = round(study.best_params['w_be_bet'], 2) #[cite: 4]
+        self.w_trend = round(study.best_params['w_trend'], 2) 
+        self.w_be_bet = round(study.best_params['w_be_bet'], 2) 
         
         print(f"✅ [OPTUNA] Xong! W_Chuoi:{self.w_chuoi} | Dice130(5/4):{self.w_m5}/{self.w_m4} | M_TX:{self.w_tx} | Trend:{self.w_trend} | BeBet:{self.w_be_bet}\n")
 
@@ -361,7 +380,7 @@ class SunwinLogic_Merged:
                     if raw_was_correct:
                         streak['win'] += 1
                         streak['loss'] = 0
-                        if streak['win'] >= 2: #[cite: 4]
+                        if streak['win'] >= 2: 
                             self.bait_matrix[matrix_key][bucket] = False
                             streak['win'] = 0
                             print(f"✅ [MA TRẬN] Cầu {matrix_key} {bucket}% chuẩn form 2 tay! TẮT BẺ CẦU.")
@@ -384,7 +403,7 @@ class SunwinLogic_Merged:
             self.sync_to_dashboard(next_session_id, "WAIT", f"Đang nạp mồi: {len(data)}/{REQUIRED_LEN} ván")
             return
 
-        # 1. Dữ liệu Trọng Số 13 Ván (Làm Base chính)[cite: 1]
+        # 1. Dữ liệu Trọng Số 13 Ván (Làm Base chính)
         chuoi_50_kq = ["T" if item['tong'] > 10 else "X" for item in data[-50:]]
         _, chuoi_tai, chuoi_xiu = du_doan_tu_chuoi(chuoi_50_kq)
 
@@ -399,15 +418,15 @@ class SunwinLogic_Merged:
         mc_xx_tai, mc_xx_xiu, mc_xx_log = predict_maucau_diem(list_tong_130, self.w_m5, self.w_m4)
         mc_tx_tai, mc_tx_xiu, mc_tx_log = predict_maucau_tx_diem(chuoi_80_kq, self.w_tx)
 
-        # 4. Điểm Xu hướng (Trend)[cite: 3, 4]
+        # 4. Điểm Xu hướng (Trend)
         trend_val = predict_trend_logic(chuoi_50_kq, self.w_trend)
 
-        # 5. Điểm Bẻ bệt (Logic mới: Cộng tỉ lệ sau 3 tay bệt)[cite: 4]
+        # 5. Điểm Bẻ bệt (Logic mới: Cộng tỉ lệ sau 3 tay bệt)
         be_bet_val = predict_be_bet_logic(chuoi_50_kq, self.w_be_bet)
 
-        # BỘ LỌC NHIỄU (Cap limit max 20, tích hợp Trend & Bẻ bệt)[cite: 4]
-        bonus_tai = min(20.0, mc_xx_tai + mc_tx_tai + (trend_val if trend_val > 0 else 0) + (be_bet_val if be_bet_val > 0 else 0)) #[cite: 4]
-        bonus_xiu = min(20.0, mc_xx_xiu + mc_tx_xiu + (abs(trend_val) if trend_val < 0 else 0) + (abs(be_bet_val) if be_bet_val < 0 else 0)) #[cite: 4]
+        # BỘ LỌC NHIỄU (Cap limit max 20, tích hợp Trend & Bẻ bệt)
+        bonus_tai = min(20.0, mc_xx_tai + mc_tx_tai + (trend_val if trend_val > 0 else 0) + (be_bet_val if be_bet_val > 0 else 0)) 
+        bonus_xiu = min(20.0, mc_xx_xiu + mc_tx_xiu + (abs(trend_val) if trend_val < 0 else 0) + (abs(be_bet_val) if be_bet_val < 0 else 0)) 
 
         # Hợp nhất Toán học
         final_tai = chia_tai + bonus_tai
@@ -429,8 +448,8 @@ class SunwinLogic_Merged:
         print(f"   => Trọng số 13  : TÀI {chuoi_tai:.1f}% | XỈU {chuoi_xiu:.1f}%")
         print(f"   => Điểm Mẫu XX  : +{round(mc_xx_tai,1)} TÀI | +{round(mc_xx_xiu,1)} XỈU (Mẫu {mc_xx_log})")
         print(f"   => Điểm Mẫu TX  : +{mc_tx_tai} TÀI | +{mc_tx_xiu} XỈU (Mẫu {mc_tx_log})")
-        print(f"   => Điểm XU HƯỚNG: {'+' if trend_val > 0 else ''}{round(trend_val, 1)} (Trend {abs(trend_val)})") #[cite: 4]
-        print(f"   => Điểm BẺ BỆT  : {'+' if be_bet_val > 0 else ''}{round(be_bet_val, 1)} (Sau 3 ván bệt)") #[cite: 4]
+        print(f"   => Điểm XU HƯỚNG: {'+' if trend_val > 0 else ''}{round(trend_val, 1)} (Trend {abs(trend_val)})") 
+        print(f"   => Điểm BẺ BỆT  : {'+' if be_bet_val > 0 else ''}{round(be_bet_val, 1)} (Sau 3 ván bệt)") 
         print(f"   => TỔNG KẾT     : Khớp logic {chot_goc} ({conf_percent}%)")
         print(f"   => Trạng thái   : [MỐC LƯU: {matrix_key} {current_bucket}%]")
 
@@ -463,7 +482,8 @@ class SunwinLogic_Merged:
         print("🚀 Khởi động TOOL v6 (MONGODB ACTIVE)...")
         while True:
             try:
-                res = requests.get(API_ENDPOINT, timeout=3)
+                # Đính kèm HEADERS chứa thông tin User vào Requests để xác thực
+                res = requests.get(API_ENDPOINT, headers=HEADERS, timeout=3)
                 res.raise_for_status()
                 api_data = res.json()
                 
@@ -484,7 +504,8 @@ class SunwinLogic_Merged:
                     self.inject_new_data(curr_session, dice, tong)
                     self.analyze_next_round(curr_session + 1)
 
-            except Exception: pass
+            except Exception as e:
+                pass
             time.sleep(2)
 
 if __name__ == "__main__":
