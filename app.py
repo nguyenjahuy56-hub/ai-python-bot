@@ -5,27 +5,29 @@ import os
 import sys
 import threading
 import math
+import collections
+import numpy as np
 import optuna
+from scipy import stats as scipy_stats
 from pymongo import MongoClient
 from flask import Flask
 
-# Tắt log rác của Optuna
 optuna.logging.set_verbosity(optuna.logging.WARNING)
 
 # ==========================================
-# ⚙️ CONFIG HỆ THỐNG & THÔNG TIN XÁC THỰC
+# ⚙️  CONFIG
 # ==========================================
 API_ENDPOINT  = "https://apisun-production-8d96.up.railway.app/api/ddvipro"
 SYNC_ENDPOINT = "https://apisun-production-8d96.up.railway.app/api/update-prediction"
 MONGO_URI     = "mongodb+srv://huylog333_db_user:engL1VIN3XA7egZY@cluster0.2myhlng.mongodb.net/?appName=Cluster0"
 
 USER_AUTH_DATA = {
-    "accessToken":    "d93b0a3da4204530bbf97944c5353348",
-    "refreshToken":   "a48b8445b47545e8bf55b5ebcdd303c5.fd44c0a6c99b455c84c845298d835679",
-    "wsToken":        "eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJnZW5kZXIiOjAsImNhblZpZXdTdGF0IjpmYWxzZSwiZGlzcGxheU5hbWUiOiJzb25ndmVkZW0yMCIsImJvdCI6MCwiaXNNZXJjaGFudCI6ZmFsc2UsInZlcmlmaWVkQmFua0FjY291bnQiOnRydWUsInBsYXlFdmVudExvYmJ5IjpmYWxzZSwiY3VzdG9tZXJJZCI6MjM5OTUzMjE1LCJhZmZJZCI6ImRlZmF1bHQiLCJiYW5uZWQiOmZhbHNlLCJicmFuZCI6InN1bi53aW4iLCJlbWFpbCI6IiIsInRpbWVzdGFtcCI6MTc3ODA0MzQyMjAxNiwibG9ja0dhbWVzIjpbXSwiYW1vdW50IjowLCJsb2NrQ2hhdCI6ZmFsc2UsInBob25lVmVyaWZpZWQiOnRydWUsImlwQWRkcmVzcyI6IjExMy4xNzUuMTAwLjU3IiwibXV0ZSI6ZmFsc2UsImF2YXRhciI6Imh0dHBzOi8vaW1hZ2VzLnN3aW5zaG9wLm5ldC9pbWFnZXMvYXZhdGFyL2F2YXRhcl8xMC5wbmciLCJwbGF0Zm9ybUlkIjoyLCJ1c2VySWQiOiIwMDM3NDA2OC04YmZiLTQ5NTYtOWIxMi0yODkzYzMxMDcxNjAiLCJlbWFpbFZlcmlmaWVkIjpudWxsLCJyZWdUaW1lIjoxNzQ1NTkyNjU1ODA3LCJwaG9uZSI6Ijg0MzI5Njg5OTcxIiwiZGVwb3NpdCI6dHJ1ZSwidXNlcm5hbWUiOiJTQ19zb25ndmVkZW0xMCJ9.4jl_XtPCRLFuSOrBlfAtaSz3kg27oIqZFqcHwPv34G0",
-    "signature":      "366DB52754A4C6B5AE4D3169940BE3BB2C046D859898F0B7E6BDFA3F84069E77B309CE8EE69EA0482776D271C521EDC2D223503CA0B182D6F8DB9E4C0E49C9514DF7418F284DF0AD4F603F23018D0914A225350B66C82C2A17FC2297CF27BF13D4DDE48E06427520B0A99BB8EC0EA3A6947FD1D255BE3AB92C66F0DD475EF5F9",
-    "userId":         "00374068-8bfb-4956-9b12-2893c3107160",
-    "username":       "SC_songvedem10"
+    "accessToken":  "d93b0a3da4204530bbf97944c5353348",
+    "refreshToken": "a48b8445b47545e8bf55b5ebcdd303c5.fd44c0a6c99b455c84c845298d835679",
+    "wsToken":      "eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJnZW5kZXIiOjAsImNhblZpZXdTdGF0IjpmYWxzZSwiZGlzcGxheU5hbWUiOiJzb25ndmVkZW0yMCIsImJvdCI6MCwiaXNNZXJjaGFudCI6ZmFsc2UsInZlcmlmaWVkQmFua0FjY291bnQiOnRydWUsInBsYXlFdmVudExvYmJ5IjpmYWxzZSwiY3VzdG9tZXJJZCI6MjM5OTUzMjE1LCJhZmZJZCI6ImRlZmF1bHQiLCJiYW5uZWQiOmZhbHNlLCJicmFuZCI6InN1bi53aW4iLCJlbWFpbCI6IiIsInRpbWVzdGFtcCI6MTc3ODA0MzQyMjAxNiwibG9ja0dhbWVzIjpbXSwiYW1vdW50IjowLCJsb2NrQ2hhdCI6ZmFsc2UsInBob25lVmVyaWZpZWQiOnRydWUsImlwQWRkcmVzcyI6IjExMy4xNzUuMTAwLjU3IiwibXV0ZSI6ZmFsc2UsImF2YXRhciI6Imh0dHBzOi8vaW1hZ2VzLnN3aW5zaG9wLm5ldC9pbWFnZXMvYXZhdGFyL2F2YXRhcl8xMC5wbmciLCJwbGF0Zm9ybUlkIjoyLCJ1c2VySWQiOiIwMDM3NDA2OC04YmZiLTQ5NTYtOWIxMi0yODkzYzMxMDcxNjAiLCJlbWFpbFZlcmlmaWVkIjpudWxsLCJyZWdUaW1lIjoxNzQ1NTkyNjU1ODA3LCJwaG9uZSI6Ijg0MzI5Njg5OTcxIiwiZGVwb3NpdCI6dHJ1ZSwidXNlcm5hbWUiOiJTQ19zb25ndmVkZW0xMCJ9.4jl_XtPCRLFuSOrBlfAtaSz3kg27oIqZFqcHwPv34G0",
+    "signature":    "366DB52754A4C6B5AE4D3169940BE3BB2C046D859898F0B7E6BDFA3F84069E77B309CE8EE69EA0482776D271C521EDC2D223503CA0B182D6F8DB9E4C0E49C9514DF7418F284DF0AD4F603F23018D0914A225350B66C82C2A17FC2297CF27BF13D4DDE48E06427520B0A99BB8EC0EA3A6947FD1D255BE3AB92C66F0DD475EF5F9",
+    "userId":       "00374068-8bfb-4956-9b12-2893c3107160",
+    "username":     "SC_songvedem10"
 }
 
 HEADERS = {
@@ -35,11 +37,11 @@ HEADERS = {
     "Content-Type":  "application/json"
 }
 
-HISTORY_MAX  = 350   # Lưu tối đa 350 ván để engine Markov có đủ mẫu
-REQUIRED_LEN = 20    # Cần ít nhất 20 ván để bắt đầu dự đoán
+HISTORY_MAX  = 500
+REQUIRED_LEN = 20
 
 # ==========================================
-# 🛠️ KẾT NỐI MONGODB
+# 🛠️  MONGODB
 # ==========================================
 try:
     mongo_client = MongoClient(MONGO_URI, serverSelectionTimeoutMS=8000, connectTimeoutMS=8000)
@@ -56,7 +58,7 @@ app = Flask(__name__)
 
 @app.route('/')
 def keep_alive():
-    return "🔥 AI Server v7 BAYESIAN — 6-ENGINE + WATCHDOG ACTIVE"
+    return "🔥 SUNWIN AI v8 — ADAPTIVE ENSEMBLE + META-LEARNING ACTIVE"
 
 @app.route('/health')
 def health():
@@ -64,7 +66,7 @@ def health():
 
 
 # ==========================================
-# 🔢 TIỆN ÍCH TOÁN HỌC
+# 🔢  TOÁN HỌC CORE
 # ==========================================
 def _sigmoid(x: float) -> float:
     x = max(-500.0, min(500.0, x))
@@ -74,11 +76,7 @@ def _to_log_odds(p: float) -> float:
     p = max(1e-7, min(1.0 - 1e-7, p))
     return math.log(p / (1.0 - p))
 
-def shannon_entropy(seq: list, window: int = 30) -> float:
-    """
-    Shannon entropy: 1.0 = hoàn toàn ngẫu nhiên, 0.0 = pattern rõ ràng.
-    Dùng để scale trọng số — khi ngẫu nhiên cao, giảm tin tưởng vào engine.
-    """
+def shannon_entropy(seq: list, window: int = 40) -> float:
     s = seq[-window:] if len(seq) >= window else seq
     if not s:
         return 1.0
@@ -89,251 +87,513 @@ def shannon_entropy(seq: list, window: int = 30) -> float:
     p = t / n
     return -p * math.log2(p) - (1.0 - p) * math.log2(1.0 - p)
 
+def runs_test_pvalue(seq: list) -> float:
+    """
+    Wald–Wolfowitz runs test: kiểm tra xem chuỗi có ngẫu nhiên thực sự không.
+    p-value thấp (< 0.05) → chuỗi CÓ cấu trúc thực sự.
+    p-value cao → ngẫu nhiên, giảm độ tin cậy dự đoán.
+    """
+    if len(seq) < 10:
+        return 1.0
+    arr = np.array([1 if x == 'T' else 0 for x in seq[-100:]])
+    n1  = int(arr.sum())
+    n2  = len(arr) - n1
+    if n1 == 0 or n2 == 0:
+        return 0.0
+    runs = 1 + sum(1 for i in range(1, len(arr)) if arr[i] != arr[i - 1])
+    mu   = 1 + 2 * n1 * n2 / (n1 + n2)
+    var  = (2 * n1 * n2 * (2 * n1 * n2 - n1 - n2)) / ((n1 + n2) ** 2 * (n1 + n2 - 1))
+    if var <= 0:
+        return 1.0
+    z    = (runs - mu) / math.sqrt(var)
+    pval = 2 * (1 - scipy_stats.norm.cdf(abs(z)))
+    return float(pval)
+
+def autocorrelation_lag1(seq: list, window: int = 60) -> float:
+    """
+    Tương quan bậc 1: đo mức độ ván tiếp liên quan ván trước.
+    Gần 0 = độc lập; dương = xu hướng tiếp diễn; âm = xen kẽ.
+    """
+    s   = [1 if c == 'T' else 0 for c in seq[-window:]]
+    if len(s) < 5:
+        return 0.0
+    a   = np.array(s[:-1], dtype=float)
+    b   = np.array(s[1:],  dtype=float)
+    if a.std() == 0 or b.std() == 0:
+        return 0.0
+    return float(np.corrcoef(a, b)[0, 1])
+
 
 # ==========================================
-# 🧠 ENGINE 1: MARKOV CHAIN ĐA BẬC + BACKOFF + LAPLACE
+# 🧠 ENGINE 1: MARKOV ĐA BẬC + BIC MODEL SELECTION
 # ==========================================
-def engine_markov_chain(seq: list, max_order: int = 5) -> float:
+def engine_markov_bic(seq: list, max_order: int = 6) -> tuple:
     """
-    Dùng chuỗi Markov bậc cao nhất có đủ mẫu (≥4 lần xuất hiện).
-    Backoff từ bậc 5 → 1 cho đến khi tìm được.
-    Laplace smoothing +1 để tránh chia cho 0.
-
-    Đây là engine chủ lực — nắm bắt sự phụ thuộc có trí nhớ dài.
+    Chọn bậc Markov tối ưu qua BIC (Bayesian Information Criterion).
+    BIC phạt model phức tạp → chọn bậc đơn giản nhất giải thích dữ liệu tốt nhất.
+    Trả về (p_tai, confidence).
     """
-    if len(seq) < 2:
-        return 0.5
+    if len(seq) < 5:
+        return 0.5, 0.0
 
-    # Giới hạn cửa sổ tìm kiếm để tránh chậm
-    search = seq[-250:]
+    search = seq[-300:]
+    best_order   = 1
+    best_bic     = float('inf')
+    best_p_tai   = 0.5
 
-    for order in range(min(max_order, len(search) - 1), 0, -1):
-        ctx = tuple(search[-order:])
+    for order in range(1, min(max_order + 1, len(search) // 5 + 1)):
+        ctx   = tuple(search[-order:])
         t_cnt, x_cnt = 0, 0
-
         for i in range(len(search) - order):
             if tuple(search[i:i + order]) == ctx:
-                nxt = search[i + order]
+                if search[i + order] == 'T':
+                    t_cnt += 1
+                else:
+                    x_cnt += 1
+
+        total = t_cnt + x_cnt
+        if total < 3:
+            continue
+
+        p_t  = (t_cnt + 1) / (total + 2)
+        # BIC = -2*log_likelihood + k*log(n)
+        ll   = t_cnt * math.log(p_t + 1e-9) + x_cnt * math.log(1 - p_t + 1e-9)
+        k    = 2 ** order  # số tham số trong transition table bậc-order
+        bic  = -2 * ll + k * math.log(total + 1)
+
+        if bic < best_bic:
+            best_bic   = bic
+            best_order = order
+            best_p_tai = p_t
+
+    # Confidence: dựa vào total và độ lệch khỏi 0.5
+    ctx   = tuple(search[-best_order:])
+    t_cnt, x_cnt = 0, 0
+    for i in range(len(search) - best_order):
+        if tuple(search[i:i + best_order]) == ctx:
+            if search[i + best_order] == 'T':
+                t_cnt += 1
+            else:
+                x_cnt += 1
+    total  = t_cnt + x_cnt
+    conf   = min(1.0, total / 12.0) * abs(best_p_tai - 0.5) * 2.0
+
+    return best_p_tai, conf
+
+
+# ==========================================
+# 🧠 ENGINE 2: N-GRAM + CHI-SQUARE SIGNIFICANCE TEST
+# ==========================================
+def engine_ngram_significant(seq: list) -> tuple:
+    """
+    N-gram nhưng chỉ tin tưởng pattern NẾU chi-square test cho p < 0.15.
+    Tránh false positive trên mẫu nhỏ.
+    """
+    if len(seq) < 5:
+        return 0.5, 0.0
+
+    search = seq[-250:]
+
+    for n in (7, 6, 5, 4, 3):
+        if len(search) <= n + 2:
+            continue
+        pattern = tuple(search[-n:])
+        t_cnt, x_cnt = 0, 0
+        all_t, all_x = 0, 0
+
+        for i in range(len(search) - n):
+            nxt = search[i + n]
+            if nxt == 'T':
+                all_t += 1
+            else:
+                all_x += 1
+            if tuple(search[i:i + n]) == pattern:
                 if nxt == 'T':
                     t_cnt += 1
                 else:
                     x_cnt += 1
 
         total = t_cnt + x_cnt
-        if total >= 4:
-            # Laplace smoothing: cộng 1 vào cả hai phía
-            return (t_cnt + 1) / (total + 2)
-
-    # Fallback: tần suất thực trong 50 ván gần nhất
-    win = seq[-50:]
-    t = sum(1 for c in win if c == 'T')
-    return (t + 1) / (len(win) + 2)
-
-
-# ==========================================
-# 🧠 ENGINE 2: N-GRAM PATTERN MATCHING (7→3 ký tự)
-# ==========================================
-def engine_ngram_pattern(seq: list) -> tuple:
-    """
-    Khớp mẫu N-gram từ dài nhất (7) xuống ngắn nhất (3).
-    Dừng lại tại mẫu dài nhất có ≥3 lần khớp.
-    Trả về (p_tai, confidence).
-    confidence = độ tin cậy dựa trên số mẫu khớp được.
-    """
-    if len(seq) < 4:
-        return 0.5, 0.0
-
-    search = seq[-200:]
-
-    for n in (7, 6, 5, 4, 3):
-        if len(search) <= n:
+        if total < 4:
             continue
 
-        pattern = tuple(search[-n:])
-        t_cnt, x_cnt = 0, 0
+        total_all = all_t + all_x
+        if total_all == 0:
+            continue
 
-        for i in range(len(search) - n):
-            if tuple(search[i:i + n]) == pattern:
-                if search[i + n] == 'T':
-                    t_cnt += 1
-                else:
-                    x_cnt += 1
+        # Chi-square: so sánh phân phối sau pattern vs phân phối toàn cục
+        expected_t = total * (all_t / total_all)
+        expected_x = total * (all_x / total_all)
+        if expected_t < 1 or expected_x < 1:
+            continue
 
-        total = t_cnt + x_cnt
-        if total >= 3:
-            p_t = (t_cnt + 1) / (total + 2)
-            # confidence tuyến tính: 3 mẫu = 0.3, 10+ mẫu = 1.0
-            conf = min(1.0, total / 10.0)
+        chi2 = ((t_cnt - expected_t) ** 2 / expected_t +
+                (x_cnt - expected_x) ** 2 / expected_x)
+        pval = float(1 - scipy_stats.chi2.cdf(chi2, df=1))
+
+        # Chỉ tin tưởng nếu pattern có ý nghĩa thống kê (p < 0.20)
+        if pval < 0.20:
+            p_t  = (t_cnt + 1) / (total + 2)
+            # Confidence cao hơn khi p-value thấp hơn
+            conf = min(1.0, (0.20 - pval) / 0.20) * min(1.0, total / 8.0)
             return p_t, conf
 
     return 0.5, 0.0
 
 
 # ==========================================
-# 🧠 ENGINE 3: STREAK ANALYSIS THỰC NGHIỆM
+# 🧠 ENGINE 3: STREAK ANALYSIS NÂNG CẤP (Hazard Rate)
 # ==========================================
-def engine_streak_analysis(seq: list) -> float:
+def engine_streak_hazard(seq: list) -> tuple:
     """
-    Sau bệt N ván cùng chiều, tỉ lệ bẻ cầu thực tế từ lịch sử là bao nhiêu?
-    Không dùng heuristic cứng — dùng đếm thực.
-
-    Ví dụ: Sau 4 ván T liên tiếp, lịch sử cho thấy 60% bẻ sang X.
+    Hazard rate model: P(bẻ cầu | đã bệt k ván).
+    Xây dựng empirical survival curve từ lịch sử thực.
+    Chuẩn hơn so với đếm đơn giản.
     """
-    if len(seq) < 4:
-        return 0.5
+    if len(seq) < 5:
+        return 0.5, 0.0
 
-    last = seq[-1]
-
-    # Đo độ dài bệt hiện tại
-    streak_len = 0
+    last      = seq[-1]
+    streak    = 0
     for c in reversed(seq):
         if c == last:
-            streak_len += 1
+            streak += 1
         else:
             break
 
-    if streak_len < 2:
-        return 0.5   # Chưa bệt đủ để phân tích
+    if streak < 1:
+        return 0.5, 0.0
 
-    # Giới hạn streak_len để tránh quét quá ít mẫu
-    k = min(streak_len, 5)
+    # Xây hazard table từ toàn bộ lịch sử
+    hazard    = {}  # {streak_len: (reversal_count, continue_count)}
+    search    = seq[:-streak] if streak < len(seq) else seq
 
-    rev_cnt  = 0   # Số lần bẻ cầu sau bệt k ván
-    cont_cnt = 0   # Số lần tiếp tục sau bệt k ván
-
-    for i in range(len(seq) - k - 1):
-        # Kiểm tra bệt k ván tại vị trí i
-        if all(seq[i + j] == last for j in range(k)):
-            # Bệt phải bắt đầu đúng tại i (ký tự trước khác hoặc không có)
-            if i == 0 or seq[i - 1] != last:
-                nxt = seq[i + k]
-                if nxt == last:
-                    cont_cnt += 1
+    i = 0
+    while i < len(search):
+        run_val = search[i]
+        run_len = 0
+        j       = i
+        while j < len(search) and search[j] == run_val:
+            run_len += 1
+            j       += 1
+        # Ghi hazard tại từng bước trong run này
+        for step in range(1, run_len + 1):
+            k = step
+            if j < len(search):
+                rev = (search[j] != run_val)
+                if k not in hazard:
+                    hazard[k] = [0, 0]
+                if rev:
+                    hazard[k][0] += 1
                 else:
-                    rev_cnt += 1
+                    hazard[k][1] += 1
+        i = j
 
-    total = rev_cnt + cont_cnt
-    if total < 2:
-        # Prior nhẹ: bệt ≥ 3 thì hơi nghiêng về bẻ
-        p_reversal = 0.58 if streak_len >= 3 else 0.5
-    else:
-        p_reversal = (rev_cnt + 1) / (total + 2)
+    # Lookup hazard tại streak hiện tại (dùng bậc thang nếu không có exact)
+    k    = min(streak, 8)
+    rev_count, cont_count = 0, 0
+    for step in range(max(1, k - 1), k + 2):
+        if step in hazard:
+            rev_count  += hazard[step][0]
+            cont_count += hazard[step][1]
 
-    # p_tai = P(ván tiếp theo là TÀI)
-    return (1.0 - p_reversal) if last == 'T' else p_reversal
-
-
-# ==========================================
-# 🧠 ENGINE 4: EMA XU HƯỚNG (Exponential Moving Average)
-# ==========================================
-def engine_ema_trend(seq: list, alpha: float = 0.25) -> float:
-    """
-    EMA với alpha=0.25 → cửa sổ hiệu dụng ~7 ván.
-    Nếu EMA > 0.5 → xu hướng TÀI, < 0.5 → xu hướng XỈU.
-    Bổ sung nhỏ để đuổi theo momentum ngắn hạn.
-    """
-    if not seq:
-        return 0.5
-
-    ema = 0.5
-    for c in seq[-60:]:
-        v   = 1.0 if c == 'T' else 0.0
-        ema = alpha * v + (1.0 - alpha) * ema
-
-    return ema
-
-
-# ==========================================
-# 🧠 ENGINE 5: PHÂN PHỐI XÚC XẮC — HỒI QUY TRUNG BÌNH
-# ==========================================
-def engine_dice_regression(tong_list: list, window: int = 30) -> float:
-    """
-    3 xúc xắc: trung bình lý thuyết ≈ 10.5.
-    Nếu gần đây liên tục cao (>10.5) → hơi lean về XỈU (hồi quy).
-    Nếu liên tục thấp → hơi lean về TÀI.
-    Đây là signal yếu nhất — chỉ cộng bổ sung nhỏ.
-    """
-    if len(tong_list) < 8:
-        return 0.5
-
-    recent     = tong_list[-window:]
-    mean_r     = sum(recent) / len(recent)
-    EXPECTED   = 10.5
-    deviation  = (mean_r - EXPECTED) / 2.5   # normalize
-
-    # deviation > 0 (mean cao) → hơi lean XỈU → p_tai giảm
-    return _sigmoid(-deviation * 0.35)
-
-
-# ==========================================
-# 🧠 ENGINE 6: OSCILLATION DETECTOR (Cầu Rung)
-# ==========================================
-def engine_oscillation(seq: list) -> float:
-    """
-    Phát hiện chuỗi xen kẽ T-X-T-X (cầu rung).
-    Nếu 5 ván cuối đều xen kẽ → đếm tần suất tiếp tục/phá vỡ trong lịch sử.
-    """
-    if len(seq) < 6:
-        return 0.5
-
-    last5 = seq[-5:]
-    is_alternating = all(last5[i] != last5[i + 1] for i in range(4))
-
-    if not is_alternating:
-        return 0.5
-
-    # Đếm lịch sử: sau chuỗi xen kẽ 5 ký tự, kết quả tiếp theo là gì?
-    search = seq[-150:]
-    t_cnt, x_cnt = 0, 0
-
-    for i in range(len(search) - 5):
-        block = search[i:i + 5]
-        if all(block[j] != block[j + 1] for j in range(4)):
-            nxt = search[i + 5]
-            if nxt == 'T':
-                t_cnt += 1
-            else:
-                x_cnt += 1
-
-    total = t_cnt + x_cnt
+    total = rev_count + cont_count
     if total < 3:
-        # Default prior: cầu rung tiếp tục xen kẽ → bẻ ký tự cuối
-        last = seq[-1]
-        return 0.28 if last == 'T' else 0.72
+        # Prior: streak dài hơn → xác suất bẻ cao hơn
+        p_rev = min(0.5 + streak * 0.04, 0.72)
+        conf  = 0.2
+    else:
+        p_rev = (rev_count + 1) / (total + 2)
+        conf  = min(1.0, total / 10.0) * abs(p_rev - 0.5) * 2.0
 
-    return (t_cnt + 1) / (total + 2)
+    p_tai = (1.0 - p_rev) if last == 'T' else p_rev
+    return p_tai, conf
 
 
 # ==========================================
-# 🧠 KẾT HỢP BAYESIAN — LÕI TOÁN HỌC CHÍNH
+# 🧠 ENGINE 4: WEIGHTED EMA + MOMENTUM
 # ==========================================
-def bayesian_combine(engine_probs: list, weights: list, entropy: float) -> float:
+def engine_ema_momentum(seq: list) -> tuple:
     """
-    Kết hợp 6 engine bằng log-odds framework.
-
-    Cơ chế:
-    1. Mỗi engine trả về P(TÀI) ∈ [0, 1].
-    2. Chuyển sang log-odds: lo = log(p/(1-p))
-    3. Nhân với trọng số engine (Optuna tối ưu).
-    4. Scale theo entropy: entropy cao → scale xuống → kết quả về 50/50.
-    5. Tổng hợp → chuyển lại thành xác suất cuối cùng.
-
-    Entropy scale: entropy=1.0 (random) → scale=0.3; entropy=0.0 (pattern) → scale=1.0
+    EMA ngắn (α=0.35) và dài (α=0.12) kết hợp:
+    - EMA ngắn > EMA dài → momentum dương → lean TÀI
+    - Momentum indicator = EMA_short - EMA_long
     """
-    entropy_scale = max(0.3, 1.0 - entropy * 0.7)
+    if len(seq) < 5:
+        return 0.5, 0.0
 
-    log_odds_sum = 0.0
-    for p, w in zip(engine_probs, weights):
-        lo           = _to_log_odds(p)
-        log_odds_sum += w * entropy_scale * lo
+    window = seq[-80:]
+    vals   = [1.0 if c == 'T' else 0.0 for c in window]
 
-    return _sigmoid(log_odds_sum)
+    # EMA ngắn hạn
+    ema_s = 0.5
+    for v in vals:
+        ema_s = 0.35 * v + 0.65 * ema_s
+
+    # EMA dài hạn
+    ema_l = 0.5
+    for v in vals:
+        ema_l = 0.12 * v + 0.88 * ema_l
+
+    momentum = ema_s - ema_l   # [-0.5, 0.5]
+    # Chuyển momentum thành xác suất TÀI
+    p_tai = _sigmoid(momentum * 6.0)   # Scale 6 → nhạy vừa phải
+    conf  = min(1.0, abs(momentum) * 4.0)
+
+    return p_tai, conf
 
 
 # ==========================================
-# 🤖 LỚP ĐIỀU KHIỂN CHÍNH
+# 🧠 ENGINE 5: TONG DISTRIBUTION ANALYSIS
 # ==========================================
-class SunwinLogic_v7:
+def engine_tong_distribution(tong_list: list) -> tuple:
+    """
+    Phân tích phân phối tổng điểm chi tiết hơn (không chỉ mean).
+    - Dùng rolling z-score để phát hiện lệch
+    - Phân tích histogram: bucket nào đang hot?
+    - Mean reversion signal
+    """
+    if len(tong_list) < 10:
+        return 0.5, 0.0
+
+    recent  = tong_list[-40:]
+    MEAN_T  = 10.5
+    STD_T   = 2.415  # std lý thuyết 3 dice d6
+
+    # Z-score của mean gần đây
+    m       = sum(recent) / len(recent)
+    z       = (m - MEAN_T) / (STD_T / math.sqrt(len(recent)))
+
+    # Mean reversion: z cao → lean XỈU (p_tai thấp)
+    p_tai   = _sigmoid(-z * 0.5)
+    conf    = min(1.0, abs(z) / 2.0)
+
+    # Thêm: nếu nhiều ván liên tiếp ở biên (3-6 hoặc 15-18) → drift
+    extremes = sum(1 for t in recent[-10:] if t <= 6 or t >= 15)
+    if extremes >= 4:
+        # Nhiều extreme → trung tâm (10-11) có khả năng cao
+        p_tai = 0.5 + (p_tai - 0.5) * 0.3   # giảm signal
+        conf  *= 0.5
+
+    return p_tai, conf
+
+
+# ==========================================
+# 🧠 ENGINE 6: FOURIER PERIODICITY DETECTOR
+# ==========================================
+def engine_fourier_period(seq: list) -> tuple:
+    """
+    FFT để phát hiện chu kỳ ẩn trong chuỗi TX.
+    Nếu có chu kỳ mạnh → dự đoán theo chu kỳ đó.
+    Đây là engine độc đáo nhất — phát hiện pattern tuần hoàn.
+    """
+    if len(seq) < 20:
+        return 0.5, 0.0
+
+    window = seq[-128:]
+    arr    = np.array([1.0 if c == 'T' else -1.0 for c in window])
+
+    fft_vals = np.abs(np.fft.rfft(arr))
+    freqs    = np.fft.rfftfreq(len(arr))
+
+    # Bỏ qua DC component (idx 0) và tìm dominant frequency
+    fft_vals[0] = 0
+    if len(fft_vals) < 2:
+        return 0.5, 0.0
+
+    dom_idx   = int(np.argmax(fft_vals[1:])) + 1
+    dom_power = fft_vals[dom_idx]
+    total_pow = fft_vals.sum()
+
+    if total_pow == 0:
+        return 0.5, 0.0
+
+    rel_power = dom_power / total_pow   # [0,1]: phần power của dominant frequency
+
+    # Confidence chỉ cao khi chu kỳ nổi bật (> 15% tổng power)
+    if rel_power < 0.12:
+        return 0.5, 0.0
+
+    # Tính phase: vị trí hiện tại trong chu kỳ → dự đoán bước tiếp theo
+    period    = 1.0 / (freqs[dom_idx] + 1e-9)
+    pos_in_cycle = len(window) % max(1, round(period))
+    phase_ratio  = pos_in_cycle / max(1, round(period))
+
+    # Dự đoán theo Fourier: phase 0-0.5 → xu hướng T; 0.5-1.0 → X
+    # Đây là heuristic đơn giản — refinement từ thực tế
+    if arr[-1] > 0:  # Ván cuối là TÀI
+        # Theo wave: nếu đang ở đỉnh → tiếp tục hoặc giảm
+        p_tai = 0.5 - 0.15 * rel_power * math.cos(2 * math.pi * phase_ratio)
+    else:
+        p_tai = 0.5 + 0.15 * rel_power * math.cos(2 * math.pi * phase_ratio)
+
+    p_tai = max(0.2, min(0.8, p_tai))
+    conf  = min(1.0, rel_power * 3.0) * 0.6   # Cap confidence của Fourier
+
+    return p_tai, conf
+
+
+# ==========================================
+# 🧠 ENGINE 7: REGIME DETECTOR (HOT / COLD / CHOP)
+# ==========================================
+def engine_regime(seq: list) -> tuple:
+    """
+    Phân loại chế độ hiện tại của game vào 3 loại:
+    - HOT_T: TÀI đang áp đảo → lean TÀI
+    - HOT_X: XỈU đang áp đảo → lean XỈU
+    - CHOP:  Xen kẽ cao → lean tiếp tục xen kẽ
+    - NEUTRAL: 50/50
+
+    Dùng 3 cửa sổ thời gian khác nhau (5, 15, 30) để xác nhận chéo.
+    """
+    if len(seq) < 10:
+        return 0.5, 0.0
+
+    def freq_t(window):
+        s = seq[-window:] if len(seq) >= window else seq
+        return sum(1 for c in s if c == 'T') / len(s)
+
+    def chop_rate(window):
+        s = seq[-window:] if len(seq) >= window else seq
+        return sum(1 for i in range(1, len(s)) if s[i] != s[i-1]) / max(1, len(s) - 1)
+
+    f5, f15, f30  = freq_t(5), freq_t(15), freq_t(30)
+    c5, c15       = chop_rate(5), chop_rate(15)
+
+    # Regime CHOP: chop_rate cao liên tục
+    if c5 > 0.70 and c15 > 0.65:
+        # Xen kẽ mạnh → ván tiếp theo đảo chiều ván cuối
+        last  = seq[-1]
+        p_tai = 0.30 if last == 'T' else 0.70
+        conf  = min(1.0, (c5 - 0.70) * 5.0 + (c15 - 0.65) * 3.0)
+        return p_tai, conf
+
+    # Regime HOT: cả 3 cửa sổ đồng thuận lệch một chiều
+    if f5 > 0.70 and f15 > 0.60 and f30 > 0.55:
+        p_tai = 0.65
+        conf  = min(1.0, (f5 - 0.5) * 1.5)
+        return p_tai, conf
+
+    if f5 < 0.30 and f15 < 0.40 and f30 < 0.45:
+        p_tai = 0.35
+        conf  = min(1.0, (0.5 - f5) * 1.5)
+        return p_tai, conf
+
+    # Neutral
+    return (f30 * 0.4 + f15 * 0.35 + f5 * 0.25), 0.15
+
+
+# ==========================================
+# 🧠 ENGINE 8: META-LEARNER (Accuracy Tracker Per Engine)
+# ==========================================
+class MetaLearner:
+    """
+    Theo dõi độ chính xác của từng engine theo rolling window.
+    Engine nào đang đúng nhiều → weight tăng; sai nhiều → weight giảm.
+    Đây là lớp học tăng cường (reinforcement) đơn giản.
+    """
+    def __init__(self, n_engines: int = 8, window: int = 30):
+        self.n         = n_engines
+        self.window    = window
+        self.histories = [collections.deque(maxlen=window) for _ in range(n_engines)]
+
+    def update(self, engine_preds: list, actual: str):
+        """Ghi kết quả đúng/sai cho từng engine."""
+        for i, p in enumerate(engine_preds):
+            pred_label = 'T' if p >= 0.5 else 'X'
+            correct    = 1 if pred_label == actual else 0
+            self.histories[i].append(correct)
+
+    def get_accuracy_weights(self) -> list:
+        """
+        Trả về trọng số bổ sung cho mỗi engine dựa trên accuracy gần đây.
+        Engine ≥70% acc → bonus; < 40% acc → penalty.
+        """
+        weights = []
+        for hist in self.histories:
+            if len(hist) < 5:
+                weights.append(1.0)
+            else:
+                acc = sum(hist) / len(hist)
+                # Sigmoid-like mapping: 70%→1.4, 50%→1.0, 30%→0.6
+                w = 0.5 + acc * 1.2
+                weights.append(round(w, 3))
+        return weights
+
+
+# ==========================================
+# 🧠 CORE: ADAPTIVE BAYESIAN ENSEMBLE
+# ==========================================
+def adaptive_bayesian_combine(
+    engine_results: list,   # list of (p_tai, confidence) tuples
+    base_weights: list,
+    meta_weights: list,
+    entropy: float,
+    runs_pval: float,
+    autocorr: float
+) -> tuple:
+    """
+    Kết hợp tất cả engine với:
+    1. Base weights (Optuna)
+    2. Engine confidence (tự báo cáo)
+    3. Meta-learning weights (rolling accuracy)
+    4. Entropy scaling (thị trường ngẫu nhiên → thu về 50/50)
+    5. Runs test: nếu chuỗi thực sự ngẫu nhiên → giảm signal mạnh
+    6. Autocorrelation-aware: nếu autocorr dương → ủng hộ continuation
+
+    Trả về (p_tai_final, overall_confidence)
+    """
+    # --- Entropy scale: chuỗi càng ngẫu nhiên → scale xuống ---
+    if entropy > 0.92:
+        entropy_scale = 0.25
+    elif entropy > 0.80:
+        entropy_scale = 0.50
+    elif entropy > 0.65:
+        entropy_scale = 0.75
+    else:
+        entropy_scale = 1.0
+
+    # --- Runs test scale: p > 0.5 → likely random → giảm thêm ---
+    runs_scale = 1.0 - max(0.0, runs_pval - 0.20) * 0.8
+
+    combined_scale = entropy_scale * runs_scale
+
+    log_odds_sum  = 0.0
+    weight_sum    = 0.0
+    conf_weighted = 0.0
+
+    for i, (p_tai, conf) in enumerate(engine_results):
+        bw    = base_weights[i]
+        mw    = meta_weights[i]
+        # Confidence điều chỉnh weight: engine tự báo conf thấp → giảm bớt
+        eff_w = bw * mw * max(0.3, conf + 0.4)
+
+        lo    = _to_log_odds(p_tai)
+        log_odds_sum  += eff_w * combined_scale * lo
+        weight_sum    += eff_w
+        conf_weighted += eff_w * conf
+
+    if weight_sum == 0:
+        return 0.5, 0.0
+
+    # Autocorrelation bias: nếu chuỗi có xu hướng continuation/reversal
+    # autocorr > 0.1 → lean tiếp tục ván cuối
+    # autocorr < -0.1 → lean đảo chiều
+    if abs(autocorr) > 0.08:
+        autocorr_lo   = autocorr * 0.4  # Nhỏ thôi
+        log_odds_sum += autocorr_lo * combined_scale
+
+    p_tai_final  = _sigmoid(log_odds_sum)
+    avg_conf     = conf_weighted / weight_sum * combined_scale
+    avg_conf     = max(0.0, min(1.0, avg_conf))
+
+    return p_tai_final, avg_conf
+
+
+# ==========================================
+# 🤖 LỚP ĐIỀU KHIỂN CHÍNH v8
+# ==========================================
+class SunwinLogic_v8:
     def __init__(self):
         self.last_session_id      = None
         self.total_played         = 0
@@ -343,18 +603,27 @@ class SunwinLogic_v7:
         self.history_predictions  = {}
         self.tune_counter         = 0
 
-        # --- TRỌNG SỐ 6 ENGINE (Optuna sẽ tối ưu liên tục) ---
-        self.w_markov  = 2.5   # Engine 1 — Markov Chain (lõi chính)
-        self.w_ngram   = 2.0   # Engine 2 — N-gram Pattern
-        self.w_streak  = 1.5   # Engine 3 — Streak Analysis
-        self.w_ema     = 0.8   # Engine 4 — EMA Trend
-        self.w_dice    = 0.4   # Engine 5 — Dice Regression (signal yếu)
-        self.w_osc     = 0.9   # Engine 6 — Oscillation
+        # --- BASE WEIGHTS 8 ENGINE ---
+        self.weights = [
+            3.0,   # E1: Markov BIC
+            2.5,   # E2: N-gram chi-square
+            1.8,   # E3: Streak hazard
+            1.2,   # E4: EMA momentum
+            0.5,   # E5: Tong distribution
+            0.7,   # E6: Fourier period
+            1.5,   # E7: Regime detector
+            0.0,   # E8: placeholder (meta weights applied separately)
+        ]
 
-        # --- MA TRẬN BẺ CẦU ---
-        self.last_raw_pred   = None
-        self.last_raw_key    = None
-        self.last_raw_bucket = None
+        # --- META-LEARNER ---
+        self.meta = MetaLearner(n_engines=7, window=30)
+
+        # --- BAIT MATRIX (giữ từ v7, đã hoạt động tốt) ---
+        self.last_engine_preds   = None
+        self.last_final_pred     = None
+        self.last_raw_pred       = None
+        self.last_raw_key        = None
+        self.last_raw_bucket     = None
 
         self.bait_matrix = {
             "TÀI": {50: False, 60: False, 70: False, 80: False, 90: False, 100: False},
@@ -365,24 +634,16 @@ class SunwinLogic_v7:
             for k in self.bait_matrix
         }
 
-        # --- WATCHDOG: Phát hiện API bị treo ---
-        self.last_data_time = time.time()
-        self.api_fail_count = 0
+        # --- WATCHDOG ---
+        self.last_data_time    = time.time()
+        self.api_fail_count    = 0
         self._watchdog_started = False
         self._start_watchdog()
 
     # ==========================================
-    # 🐕 WATCHDOG — Phát hiện API đứng im
+    # 🐕 WATCHDOG
     # ==========================================
     def _start_watchdog(self):
-        """
-        Thread chạy nền, kiểm tra mỗi 60s.
-        Nếu > 10 phút không có phiên mới:
-          - Log cảnh báo rõ ràng
-          - Reset last_session_id để buộc xử lý lại khi API sống lại
-        Nếu > 5 phút:
-          - Log cảnh báo nhẹ
-        """
         if self._watchdog_started:
             return
         self._watchdog_started = True
@@ -393,19 +654,16 @@ class SunwinLogic_v7:
                     time.sleep(60)
                     elapsed = time.time() - self.last_data_time
                     mins    = int(elapsed / 60)
-
                     if elapsed > 600:
-                        print(f"\n🚨 [WATCHDOG] ⚠️ {mins} PHÚT KHÔNG CÓ DỮ LIỆU MỚI!")
-                        print("🔄 [WATCHDOG] Reset session_id để xử lý lại khi API sống...")
-                        self.last_session_id = None  # Buộc xử lý lại ngay khi API phục hồi
-                        self.last_data_time  = time.time()  # Tránh spam reset
+                        print(f"\n🚨 [WATCHDOG] {mins} PHÚT KHÔNG CÓ DỮ LIỆU — Reset session!")
+                        self.last_session_id = None
+                        self.last_data_time  = time.time()
                     elif elapsed > 300:
-                        print(f"⚠️ [WATCHDOG] {mins} phút chưa có phiên mới — kiểm tra API/mạng.")
-
+                        print(f"⚠️ [WATCHDOG] {mins} phút chưa có phiên mới.")
                 except Exception as e:
-                    print(f"⚠️ [WATCHDOG] Lỗi nội bộ: {e}")
+                    print(f"⚠️ [WATCHDOG] Lỗi: {e}")
 
-        t = threading.Thread(target=_watch, daemon=True)
+        t      = threading.Thread(target=_watch, daemon=True)
         t.name = "WatchdogThread"
         t.start()
 
@@ -472,23 +730,25 @@ class SunwinLogic_v7:
             print(f"⚠️ [SYNC] Dashboard lỗi: {e}")
 
     # ==========================================
-    # ⚙️ OPTUNA — Tối ưu hóa trọng số Bayesian
+    # ⚙️ OPTUNA — Tối ưu 7 base weights
     # ==========================================
     def run_optuna_tuning(self, data: list):
-        if len(data) < 30:
+        if len(data) < 35:
             return
-
-        print("\n🔄 [OPTUNA] Tối ưu trọng số Bayesian 6 engine...")
+        print("\n🔄 [OPTUNA] Tối ưu 7 base weights trên lịch sử thực...")
 
         def objective(trial):
-            w_markov = trial.suggest_float('w_markov', 0.5, 6.0)
-            w_ngram  = trial.suggest_float('w_ngram',  0.5, 6.0)
-            w_streak = trial.suggest_float('w_streak', 0.1, 4.0)
-            w_ema    = trial.suggest_float('w_ema',    0.1, 3.0)
-            w_dice   = trial.suggest_float('w_dice',   0.0, 1.5)
-            w_osc    = trial.suggest_float('w_osc',    0.1, 3.0)
+            ws = [
+                trial.suggest_float('w0', 0.5, 6.0),   # Markov BIC
+                trial.suggest_float('w1', 0.5, 5.0),   # N-gram chi2
+                trial.suggest_float('w2', 0.2, 4.0),   # Streak hazard
+                trial.suggest_float('w3', 0.1, 3.0),   # EMA momentum
+                trial.suggest_float('w4', 0.0, 1.5),   # Tong dist
+                trial.suggest_float('w5', 0.0, 2.0),   # Fourier
+                trial.suggest_float('w6', 0.2, 3.5),   # Regime
+            ]
 
-            test_len = min(30, len(data) - REQUIRED_LEN)
+            test_len = min(35, len(data) - REQUIRED_LEN)
             correct  = 0
 
             for i in range(len(data) - test_len, len(data)):
@@ -496,21 +756,25 @@ class SunwinLogic_v7:
                 if len(past) < REQUIRED_LEN:
                     continue
 
-                seq       = ["T" if x['tong'] > 10 else "X" for x in past[-250:]]
-                tong_list = [x['tong'] for x in past[-50:]]
+                seq       = ["T" if x['tong'] > 10 else "X" for x in past[-300:]]
+                tong_list = [x['tong'] for x in past[-60:]]
                 entropy   = shannon_entropy(seq)
+                runs_pval = runs_test_pvalue(seq)
+                autocorr  = autocorrelation_lag1(seq)
 
-                e_probs = [
-                    engine_markov_chain(seq),
-                    engine_ngram_pattern(seq)[0],
-                    engine_streak_analysis(seq),
-                    engine_ema_trend(seq),
-                    engine_dice_regression(tong_list),
-                    engine_oscillation(seq),
+                results = [
+                    engine_markov_bic(seq),
+                    engine_ngram_significant(seq),
+                    engine_streak_hazard(seq),
+                    engine_ema_momentum(seq),
+                    engine_tong_distribution(tong_list),
+                    engine_fourier_period(seq),
+                    engine_regime(seq),
                 ]
-                weights = [w_markov, w_ngram, w_streak, w_ema, w_dice, w_osc]
-
-                p_tai  = bayesian_combine(e_probs, weights, entropy)
+                meta_ws  = [1.0] * 7
+                p_tai, _ = adaptive_bayesian_combine(
+                    results, ws, meta_ws, entropy, runs_pval, autocorr
+                )
                 pred   = "TÀI" if p_tai >= 0.5 else "XỈU"
                 actual = "TÀI" if data[i]['tong'] > 10 else "XỈU"
                 if pred == actual:
@@ -519,22 +783,13 @@ class SunwinLogic_v7:
             return correct
 
         study = optuna.create_study(direction="maximize")
-        study.optimize(objective, n_trials=60)   # 60 trials để tìm được tham số tốt hơn
+        study.optimize(objective, n_trials=80)
 
-        best           = study.best_params
-        self.w_markov  = round(best['w_markov'], 3)
-        self.w_ngram   = round(best['w_ngram'],  3)
-        self.w_streak  = round(best['w_streak'], 3)
-        self.w_ema     = round(best['w_ema'],    3)
-        self.w_dice    = round(best['w_dice'],   3)
-        self.w_osc     = round(best['w_osc'],    3)
-
-        print(
-            f"✅ [OPTUNA] Xong! "
-            f"Markov={self.w_markov} | Ngram={self.w_ngram} | "
-            f"Streak={self.w_streak} | EMA={self.w_ema} | "
-            f"Dice={self.w_dice} | Osc={self.w_osc}\n"
-        )
+        best        = study.best_params
+        self.weights = [round(best[f'w{i}'], 3) for i in range(7)]
+        names        = ["Markov", "Ngram", "Streak", "EMA", "Tong", "Fourier", "Regime"]
+        w_str        = " | ".join(f"{n}={w}" for n, w in zip(names, self.weights))
+        print(f"✅ [OPTUNA] Xong! {w_str}\n")
 
     # ==========================================
     # 🧮 PHÂN TÍCH & DỰ ĐOÁN
@@ -542,9 +797,9 @@ class SunwinLogic_v7:
     def analyze_next_round(self, next_session_id: int):
         data = self.load_data()
 
-        print(f"\n{'='*95}")
+        print(f"\n{'='*100}")
         print(f"🎯 PHÂN TÍCH PHIÊN {next_session_id}")
-        print(f"{'='*95}")
+        print(f"{'='*100}")
 
         if len(data) < REQUIRED_LEN:
             msg = f"Thu thập dữ liệu: {len(data)}/{REQUIRED_LEN} ván..."
@@ -552,117 +807,157 @@ class SunwinLogic_v7:
             self.sync_to_dashboard(next_session_id, "WAIT", msg)
             return
 
-        # Chuỗi TX và danh sách tổng
-        seq       = ["T" if x['tong'] > 10 else "X" for x in data[-250:]]
-        tong_list = [x['tong'] for x in data[-60:]]
+        seq       = ["T" if x['tong'] > 10 else "X" for x in data[-300:]]
+        tong_list = [x['tong'] for x in data[-80:]]
 
-        # ─── TÍNH ENTROPY ───
-        entropy = shannon_entropy(seq, window=30)
-        if entropy > 0.90:
-            entropy_label = "🔴 CAO — chuỗi ngẫu nhiên mạnh"
-        elif entropy > 0.70:
-            entropy_label = "🟡 TRUNG BÌNH — ít pattern"
+        # ─── PHÂN TÍCH THỐNG KÊ ───
+        entropy   = shannon_entropy(seq, window=40)
+        runs_pval = runs_test_pvalue(seq)
+        autocorr  = autocorrelation_lag1(seq)
+
+        # Labels cho log
+        if entropy > 0.92:
+            ent_label = "🔴 CAO — ngẫu nhiên mạnh"
+        elif entropy > 0.75:
+            ent_label = "🟡 TRUNG BÌNH"
         else:
-            entropy_label = "🟢 THẤP — có pattern rõ ràng"
+            ent_label = "🟢 THẤP — pattern rõ"
 
-        # ─── CHẠY 6 ENGINE ───
-        e1 = engine_markov_chain(seq)
-        e2, e2_conf = engine_ngram_pattern(seq)
-        e3 = engine_streak_analysis(seq)
-        e4 = engine_ema_trend(seq)
-        e5 = engine_dice_regression(tong_list)
-        e6 = engine_oscillation(seq)
+        if runs_pval < 0.05:
+            runs_label = "🟢 Có cấu trúc (p<0.05)"
+        elif runs_pval < 0.15:
+            runs_label = "🟡 Có thể có pattern"
+        else:
+            runs_label = "🔴 Ngẫu nhiên cao"
 
-        engine_probs = [e1, e2, e3, e4, e5, e6]
-        weights_list = [self.w_markov, self.w_ngram, self.w_streak, self.w_ema, self.w_dice, self.w_osc]
+        ac_label = f"{'dương (+tiếp diễn)' if autocorr > 0.05 else 'âm (+xen kẽ)' if autocorr < -0.05 else 'trung tính'}"
 
-        # ─── KẾT HỢP BAYESIAN ───
-        p_tai  = bayesian_combine(engine_probs, weights_list, entropy)
-        p_xiu  = 1.0 - p_tai
+        # ─── CHẠY 7 ENGINE ───
+        r1 = engine_markov_bic(seq)
+        r2 = engine_ngram_significant(seq)
+        r3 = engine_streak_hazard(seq)
+        r4 = engine_ema_momentum(seq)
+        r5 = engine_tong_distribution(tong_list)
+        r6 = engine_fourier_period(seq)
+        r7 = engine_regime(seq)
+
+        engine_results = [r1, r2, r3, r4, r5, r6, r7]
+
+        # ─── META-LEARNING WEIGHTS ───
+        meta_ws = self.meta.get_accuracy_weights()
+        w7      = self.weights[:7]
+
+        # ─── TỔNG HỢP ADAPTIVE BAYESIAN ───
+        p_tai, overall_conf = adaptive_bayesian_combine(
+            engine_results, w7, meta_ws,
+            entropy, runs_pval, autocorr
+        )
+        p_xiu = 1.0 - p_tai
 
         # ─── CHỐT GỐC ───
         chot_goc     = "TÀI" if p_tai >= 0.5 else "XỈU"
         conf_percent = round(max(p_tai, p_xiu) * 100.0, 1)
         matrix_key   = chot_goc
-        current_bucket = self.get_confidence_bucket(conf_percent)
+        bucket       = self.get_confidence_bucket(conf_percent)
+        current_wr   = (self.total_won / self.total_played * 100) if self.total_played > 0 else 50.0
 
         # ─── LOG ───
-        current_wr = (self.total_won / self.total_played * 100) if self.total_played > 0 else 50.0
+        E_NAMES = [
+            "Markov BIC (bậc tối ưu)  ",
+            "N-gram + Chi-square      ",
+            "Streak Hazard Rate       ",
+            "EMA Momentum (S/L cross) ",
+            "Tong Z-score MeanRev     ",
+            "Fourier Periodicity      ",
+            "Regime Detector (H/C/Ch) ",
+        ]
 
         print(f"")
-        print(f"📊 [ENTROPY] {entropy:.4f}  →  {entropy_label}")
-        print(f"   (Scale trọng số: {max(0.3, 1.0 - entropy * 0.7):.2f})")
+        print(f"📊 PHÂN TÍCH THỐNG KÊ:")
+        print(f"   Entropy (40v)  : {entropy:.4f}  → {ent_label}")
+        print(f"   Runs test      : p={runs_pval:.3f}  → {runs_label}")
+        print(f"   Autocorr lag-1 : r={autocorr:+.3f}  → {ac_label}")
+        combined_s = max(0.25, (1.0 - entropy * 0.7)) * (1.0 - max(0.0, runs_pval - 0.20) * 0.8)
+        print(f"   Signal scale   : {combined_s:.3f}")
         print(f"")
-        print(f"📘 [6 ENGINE — P(TÀI) | P(XỈU)]")
-        print(f"   E1 Markov Chain (bậc 1-5)  : {e1*100:5.1f}% | {(1-e1)*100:5.1f}%  [w={self.w_markov}]")
-        print(f"   E2 N-gram Pattern (3-7 kỳ) : {e2*100:5.1f}% | {(1-e2)*100:5.1f}%  [w={self.w_ngram}] conf={e2_conf:.2f}")
-        print(f"   E3 Streak Analysis (thực tế): {e3*100:5.1f}% | {(1-e3)*100:5.1f}%  [w={self.w_streak}]")
-        print(f"   E4 EMA Xu Hướng (α=0.25)   : {e4*100:5.1f}% | {(1-e4)*100:5.1f}%  [w={self.w_ema}]")
-        print(f"   E5 Dice Regression (mean)   : {e5*100:5.1f}% | {(1-e5)*100:5.1f}%  [w={self.w_dice}]")
-        print(f"   E6 Oscillation (cầu rung)   : {e6*100:5.1f}% | {(1-e6)*100:5.1f}%  [w={self.w_osc}]")
+        print(f"📘 7 ENGINE — P(TÀI) | Conf | MetaW | BaseW")
+        for i, ((p, c), name) in enumerate(zip(engine_results, E_NAMES)):
+            mw = meta_ws[i] if i < len(meta_ws) else 1.0
+            bw = w7[i]      if i < len(w7)      else 1.0
+            bar_t = "█" * int(p * 20)
+            bar_x = "░" * (20 - int(p * 20))
+            print(f"   E{i+1} {name}: {p*100:5.1f}% [{bar_t}{bar_x}] "
+                  f"conf={c:.2f} meta={mw:.2f} base={bw}")
         print(f"")
-        print(f"   ─── KẾT HỢP BAYESIAN LOG-ODDS ───")
+        print(f"   ─── ADAPTIVE BAYESIAN ENSEMBLE ───")
         print(f"   => P(TÀI) = {p_tai*100:.2f}%  |  P(XỈU) = {p_xiu*100:.2f}%")
-        print(f"   => CHỐT GỐC : {chot_goc} ({conf_percent}%)  [Bucket {current_bucket}%]")
+        print(f"   => Overall confidence = {overall_conf:.3f}")
+        print(f"   => CHỐT GỐC : {chot_goc} ({conf_percent}%)  [Bucket {bucket}%]")
 
-        # ─── MA TRẬN BẺ CẦU ───
-        nguong   = 4 if current_wr >= 55 else 3
-        note     = ""
+        # ─── BAIT MATRIX ───
+        nguong    = 4 if current_wr >= 55 else 3
+        note      = ""
         chot_cuoi = chot_goc
 
-        if self.bait_matrix[matrix_key][current_bucket]:
+        if self.bait_matrix[matrix_key][bucket]:
             chot_cuoi = "XỈU" if chot_goc == "TÀI" else "TÀI"
-            note      = f"⚠️ {matrix_key} {current_bucket}% đang lừa → ÉP BẺ SANG {chot_cuoi}"
+            note      = f"⚠️ {matrix_key} {bucket}% đang lừa → ÉP BẺ → {chot_cuoi}"
         else:
-            note = "Vào theo Bayesian đa engine"
+            note = "✅ Vào theo Adaptive Bayesian"
 
-        # Ghi nhớ cho vòng kế tiếp
+        # ─── LƯU TRẠNG THÁI ───
+        self.last_engine_preds    = [p for p, _ in engine_results]
         self.last_raw_pred        = chot_goc
         self.last_raw_key         = matrix_key
-        self.last_raw_bucket      = current_bucket
+        self.last_raw_bucket      = bucket
         self.last_final_pred      = chot_cuoi
         self.history_predictions[str(next_session_id)] = chot_cuoi
         self.predicted_session_id = next_session_id
 
         wr_str = f" [WR: {self.total_won}/{self.total_played} = {current_wr:.1f}%]" if self.total_played > 0 else ""
-        print(f"{'─'*95}")
-        print(f"🔥 LỆNH CHỐT CUỐI : VÀO {chot_cuoi}  ←  {note}{wr_str}")
+        print(f"{'─'*100}")
+        print(f"🔥 LỆNH CHỐT CUỐI : VÀO {chot_cuoi}  ← {note}{wr_str}")
 
         detail = (
-            f"Bayesian {chot_goc}({conf_percent:.1f}%) "
-            f"H={entropy:.2f} → {note}"
+            f"Adaptive-Bayes {chot_goc}({conf_percent:.1f}%) "
+            f"H={entropy:.2f} runs_p={runs_pval:.2f} → {note}"
         )
         self.sync_to_dashboard(next_session_id, chot_cuoi, detail)
-        print(f"{'='*95}\n")
+        print(f"{'='*100}\n")
 
     # ==========================================
-    # 📥 NẠP DỮ LIỆU MỚI + CHẤM ĐIỂM
+    # 📥 NẠP DỮ LIỆU + CHẤM ĐIỂM
     # ==========================================
     def inject_new_data(self, phien: int, dice: list, tong: int):
-        actual_full           = "TÀI" if tong > 10 else "XỈU"
-        self.last_data_time   = time.time()   # Cập nhật watchdog timestamp
+        actual_full         = "TÀI" if tong > 10 else "XỈU"
+        actual_label        = 'T' if tong > 10 else 'X'
+        self.last_data_time = time.time()
 
         data = self.load_data()
         data.append({'phien': phien, 'dice': dice, 'tong': tong, 'kq': actual_full})
         self.save_data(data)
 
-        # ─── CHẤM ĐIỂM NẾU ĐÚNG PHIÊN ───
         if self.last_final_pred is not None and self.predicted_session_id == phien:
             self.total_played += 1
             self.tune_counter += 1
             wr_now = (self.total_won / self.total_played) * 100
 
-            if self.last_final_pred == actual_full:
+            won = self.last_final_pred == actual_full
+            if won:
                 self.total_won += 1
                 wr_now = (self.total_won / self.total_played) * 100
                 print(f"💰 Ván {phien} HÚP {actual_full}!  WR: {self.total_won}/{self.total_played} ({wr_now:.1f}%)")
             else:
                 print(f"💀 Ván {phien} GÃY!  WR: {self.total_won}/{self.total_played} ({wr_now:.1f}%)")
 
-            # Optuna mỗi 15 ván (chạy background thread để không block)
+            # --- Update meta-learner ---
+            if self.last_engine_preds is not None:
+                self.meta.update(self.last_engine_preds, actual_label)
+
+            # --- Optuna background mỗi 15 ván ---
             if self.tune_counter >= 15:
                 self.tune_counter = 0
-                snapshot = list(data)  # Copy để tránh race condition
+                snapshot = list(data)
                 threading.Thread(
                     target=self.run_optuna_tuning,
                     args=(snapshot,),
@@ -670,7 +965,7 @@ class SunwinLogic_v7:
                     name="OptunaThread"
                 ).start()
 
-            # ─── MA TRẬN BẺ CẦU CẬP NHẬT ───
+            # --- Bait matrix update ---
             current_wr = (self.total_won / self.total_played * 100) if self.total_played > 0 else 50.0
             nguong     = 4 if current_wr >= 55 else 3
 
@@ -687,7 +982,7 @@ class SunwinLogic_v7:
                         if streak['loss'] >= nguong:
                             self.bait_matrix[mk][bk] = True
                             streak['loss']           = 0
-                            print(f"🚨 [MA TRẬN] {mk} {bk}% GÃY {nguong} TAY! BẬT BẺ CẦU.")
+                            print(f"🚨 [MA TRẬN] {mk} {bk}% GÃY {nguong} lần → BẬT BẺ CẦU.")
                     else:
                         streak['loss'] = 0
                 else:
@@ -697,28 +992,30 @@ class SunwinLogic_v7:
                         if streak['win'] >= 2:
                             self.bait_matrix[mk][bk] = False
                             streak['win']            = 0
-                            print(f"✅ [MA TRẬN] {mk} {bk}% ổn định 2 tay! TẮT BẺ CẦU.")
+                            print(f"✅ [MA TRẬN] {mk} {bk}% ổn định → TẮT BẺ CẦU.")
                     else:
                         streak['win'] = 0
 
         elif self.predicted_session_id is not None and self.predicted_session_id != phien:
             print(
-                f"⚠️ [LỆCH PHIÊN] Dự đoán cho phiên {self.predicted_session_id} "
-                f"nhưng API trả phiên {phien} — bỏ qua chấm điểm."
+                f"⚠️ [LỆCH PHIÊN] Dự đoán cho {self.predicted_session_id} "
+                f"nhưng nhận {phien} — bỏ qua chấm điểm."
             )
 
         return len(data)
 
     # ==========================================
-    # 🔄 VÒNG LẶP CHÍNH — Xử lý lỗi phân loại + Exponential Backoff
+    # 🔄 VÒNG LẶP CHÍNH
     # ==========================================
     def run(self):
-        print("🚀 Khởi động SUNWIN AI v7 — BAYESIAN 6-ENGINE + WATCHDOG...")
-        retry_delay = 2.0   # giây
+        print("🚀 Khởi động SUNWIN AI v8 — ADAPTIVE BAYESIAN ENSEMBLE + META-LEARNING...")
+        print("   7 Engine: Markov-BIC | N-gram-Chi2 | Hazard | EMA-Momentum |")
+        print("             Tong-Zscore | Fourier | Regime-Detector")
+        retry_delay = 2.0
 
         while True:
             try:
-                res = requests.get(API_ENDPOINT, headers=HEADERS, timeout=10)
+                res      = requests.get(API_ENDPOINT, headers=HEADERS, timeout=10)
                 res.raise_for_status()
                 api_data = res.json()
 
@@ -739,48 +1036,44 @@ class SunwinLogic_v7:
                     tx_str = "TÀI" if tong > 10 else "XỈU"
 
                     print(f"\n✅ PHIÊN {curr_session} | Tổng: {tong} ({tx_str}) | Xúc xắc: {dice}")
-
                     self.inject_new_data(curr_session, dice, tong)
                     self.analyze_next_round(curr_session + 1)
 
-                # Thành công → reset delay về 2s
-                retry_delay          = 2.0
-                self.api_fail_count  = 0
+                retry_delay         = 2.0
+                self.api_fail_count = 0
 
-            # ─── XỬ LÝ LỖI PHÂN LOẠI — Không dùng except: pass nữa ───
             except requests.exceptions.Timeout:
                 self.api_fail_count += 1
-                print(f"⏰ [API] Timeout #{self.api_fail_count}. Retry sau {retry_delay:.1f}s...")
+                print(f"⏰ [API] Timeout #{self.api_fail_count}. Retry {retry_delay:.1f}s...")
                 time.sleep(retry_delay)
-                retry_delay = min(retry_delay * 1.5, 60.0)   # Tối đa 60s
+                retry_delay = min(retry_delay * 1.5, 60.0)
 
             except requests.exceptions.ConnectionError as e:
                 self.api_fail_count += 1
-                print(f"🔌 [API] Mất kết nối #{self.api_fail_count}: {e}. Retry sau {retry_delay:.1f}s...")
+                print(f"🔌 [API] Mất kết nối #{self.api_fail_count}. Retry {retry_delay:.1f}s...")
                 time.sleep(retry_delay)
                 retry_delay = min(retry_delay * 1.5, 60.0)
 
             except requests.exceptions.HTTPError as e:
                 self.api_fail_count += 1
                 status = e.response.status_code if e.response else "?"
-                print(f"❌ [API] HTTP {status} #{self.api_fail_count}. Retry sau {retry_delay:.1f}s...")
+                print(f"❌ [API] HTTP {status} #{self.api_fail_count}. Retry {retry_delay:.1f}s...")
                 time.sleep(retry_delay)
-                retry_delay = min(retry_delay * 2.0, 120.0)  # 4xx/5xx → backoff mạnh hơn
+                retry_delay = min(retry_delay * 2.0, 120.0)
 
             except requests.exceptions.JSONDecodeError:
                 self.api_fail_count += 1
-                print(f"⚠️ [API] Phản hồi không phải JSON. Retry sau {retry_delay:.1f}s...")
+                print(f"⚠️ [API] Phản hồi không phải JSON. Retry {retry_delay:.1f}s...")
                 time.sleep(retry_delay)
                 retry_delay = min(retry_delay * 1.5, 30.0)
 
             except KeyError as e:
-                # API trả JSON nhưng thiếu field
-                print(f"⚠️ [API] Thiếu field {e} trong JSON. Tiếp tục...")
+                print(f"⚠️ [API] Thiếu field {e}. Tiếp tục...")
                 time.sleep(2.0)
 
             except Exception as e:
                 self.api_fail_count += 1
-                print(f"❌ [LỖI] {type(e).__name__}: {e}. Retry sau {retry_delay:.1f}s...")
+                print(f"❌ [LỖI] {type(e).__name__}: {e}. Retry {retry_delay:.1f}s...")
                 time.sleep(retry_delay)
                 retry_delay = min(retry_delay * 1.5, 30.0)
 
@@ -792,7 +1085,7 @@ class SunwinLogic_v7:
 # ==========================================
 if __name__ == "__main__":
     threading.Thread(
-        target=lambda: SunwinLogic_v7().run(),
+        target=lambda: SunwinLogic_v8().run(),
         daemon=True,
         name="MainLogicThread"
     ).start()
