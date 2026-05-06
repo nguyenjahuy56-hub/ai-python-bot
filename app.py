@@ -88,11 +88,6 @@ def shannon_entropy(seq: list, window: int = 40) -> float:
     return -p * math.log2(p) - (1.0 - p) * math.log2(1.0 - p)
 
 def runs_test_pvalue(seq: list) -> float:
-    """
-    Wald–Wolfowitz runs test: kiểm tra xem chuỗi có ngẫu nhiên thực sự không.
-    p-value thấp (< 0.05) → chuỗi CÓ cấu trúc thực sự.
-    p-value cao → ngẫu nhiên, giảm độ tin cậy dự đoán.
-    """
     if len(seq) < 10:
         return 1.0
     arr = np.array([1 if x == 'T' else 0 for x in seq[-100:]])
@@ -110,10 +105,6 @@ def runs_test_pvalue(seq: list) -> float:
     return float(pval)
 
 def autocorrelation_lag1(seq: list, window: int = 60) -> float:
-    """
-    Tương quan bậc 1: đo mức độ ván tiếp liên quan ván trước.
-    Gần 0 = độc lập; dương = xu hướng tiếp diễn; âm = xen kẽ.
-    """
     s   = [1 if c == 'T' else 0 for c in seq[-window:]]
     if len(s) < 5:
         return 0.0
@@ -128,15 +119,10 @@ def autocorrelation_lag1(seq: list, window: int = 60) -> float:
 # 🧠 ENGINE 1: MARKOV ĐA BẬC + BIC MODEL SELECTION
 # ==========================================
 def engine_markov_bic(seq: list, max_order: int = 6) -> tuple:
-    """
-    Chọn bậc Markov tối ưu qua BIC (Bayesian Information Criterion).
-    BIC phạt model phức tạp → chọn bậc đơn giản nhất giải thích dữ liệu tốt nhất.
-    Trả về (p_tai, confidence).
-    """
     if len(seq) < 5:
         return 0.5, 0.0
 
-    search = seq[-300:]
+    search = seq[-200:]
     best_order   = 1
     best_bic     = float('inf')
     best_p_tai   = 0.5
@@ -156,9 +142,8 @@ def engine_markov_bic(seq: list, max_order: int = 6) -> tuple:
             continue
 
         p_t  = (t_cnt + 1) / (total + 2)
-        # BIC = -2*log_likelihood + k*log(n)
         ll   = t_cnt * math.log(p_t + 1e-9) + x_cnt * math.log(1 - p_t + 1e-9)
-        k    = 2 ** order  # số tham số trong transition table bậc-order
+        k    = 2 ** order 
         bic  = -2 * ll + k * math.log(total + 1)
 
         if bic < best_bic:
@@ -166,7 +151,6 @@ def engine_markov_bic(seq: list, max_order: int = 6) -> tuple:
             best_order = order
             best_p_tai = p_t
 
-    # Confidence: dựa vào total và độ lệch khỏi 0.5
     ctx   = tuple(search[-best_order:])
     t_cnt, x_cnt = 0, 0
     for i in range(len(search) - best_order):
@@ -185,14 +169,10 @@ def engine_markov_bic(seq: list, max_order: int = 6) -> tuple:
 # 🧠 ENGINE 2: N-GRAM + CHI-SQUARE SIGNIFICANCE TEST
 # ==========================================
 def engine_ngram_significant(seq: list) -> tuple:
-    """
-    N-gram nhưng chỉ tin tưởng pattern NẾU chi-square test cho p < 0.15.
-    Tránh false positive trên mẫu nhỏ.
-    """
     if len(seq) < 5:
         return 0.5, 0.0
 
-    search = seq[-250:]
+    search = seq[-200:]
 
     for n in (7, 6, 5, 4, 3):
         if len(search) <= n + 2:
@@ -221,7 +201,6 @@ def engine_ngram_significant(seq: list) -> tuple:
         if total_all == 0:
             continue
 
-        # Chi-square: so sánh phân phối sau pattern vs phân phối toàn cục
         expected_t = total * (all_t / total_all)
         expected_x = total * (all_x / total_all)
         if expected_t < 1 or expected_x < 1:
@@ -231,10 +210,8 @@ def engine_ngram_significant(seq: list) -> tuple:
                 (x_cnt - expected_x) ** 2 / expected_x)
         pval = float(1 - scipy_stats.chi2.cdf(chi2, df=1))
 
-        # Chỉ tin tưởng nếu pattern có ý nghĩa thống kê (p < 0.20)
         if pval < 0.20:
             p_t  = (t_cnt + 1) / (total + 2)
-            # Confidence cao hơn khi p-value thấp hơn
             conf = min(1.0, (0.20 - pval) / 0.20) * min(1.0, total / 8.0)
             return p_t, conf
 
@@ -245,11 +222,6 @@ def engine_ngram_significant(seq: list) -> tuple:
 # 🧠 ENGINE 3: STREAK ANALYSIS NÂNG CẤP (Hazard Rate)
 # ==========================================
 def engine_streak_hazard(seq: list) -> tuple:
-    """
-    Hazard rate model: P(bẻ cầu | đã bệt k ván).
-    Xây dựng empirical survival curve từ lịch sử thực.
-    Chuẩn hơn so với đếm đơn giản.
-    """
     if len(seq) < 5:
         return 0.5, 0.0
 
@@ -264,8 +236,7 @@ def engine_streak_hazard(seq: list) -> tuple:
     if streak < 1:
         return 0.5, 0.0
 
-    # Xây hazard table từ toàn bộ lịch sử
-    hazard    = {}  # {streak_len: (reversal_count, continue_count)}
+    hazard    = {}  
     search    = seq[:-streak] if streak < len(seq) else seq
 
     i = 0
@@ -276,7 +247,6 @@ def engine_streak_hazard(seq: list) -> tuple:
         while j < len(search) and search[j] == run_val:
             run_len += 1
             j       += 1
-        # Ghi hazard tại từng bước trong run này
         for step in range(1, run_len + 1):
             k = step
             if j < len(search):
@@ -289,7 +259,6 @@ def engine_streak_hazard(seq: list) -> tuple:
                     hazard[k][1] += 1
         i = j
 
-    # Lookup hazard tại streak hiện tại (dùng bậc thang nếu không có exact)
     k    = min(streak, 8)
     rev_count, cont_count = 0, 0
     for step in range(max(1, k - 1), k + 2):
@@ -299,7 +268,6 @@ def engine_streak_hazard(seq: list) -> tuple:
 
     total = rev_count + cont_count
     if total < 3:
-        # Prior: streak dài hơn → xác suất bẻ cao hơn
         p_rev = min(0.5 + streak * 0.04, 0.72)
         conf  = 0.2
     else:
@@ -314,30 +282,22 @@ def engine_streak_hazard(seq: list) -> tuple:
 # 🧠 ENGINE 4: WEIGHTED EMA + MOMENTUM
 # ==========================================
 def engine_ema_momentum(seq: list) -> tuple:
-    """
-    EMA ngắn (α=0.35) và dài (α=0.12) kết hợp:
-    - EMA ngắn > EMA dài → momentum dương → lean TÀI
-    - Momentum indicator = EMA_short - EMA_long
-    """
     if len(seq) < 5:
         return 0.5, 0.0
 
     window = seq[-80:]
     vals   = [1.0 if c == 'T' else 0.0 for c in window]
 
-    # EMA ngắn hạn
     ema_s = 0.5
     for v in vals:
         ema_s = 0.35 * v + 0.65 * ema_s
 
-    # EMA dài hạn
     ema_l = 0.5
     for v in vals:
         ema_l = 0.12 * v + 0.88 * ema_l
 
-    momentum = ema_s - ema_l   # [-0.5, 0.5]
-    # Chuyển momentum thành xác suất TÀI
-    p_tai = _sigmoid(momentum * 6.0)   # Scale 6 → nhạy vừa phải
+    momentum = ema_s - ema_l   
+    p_tai = _sigmoid(momentum * 6.0)   
     conf  = min(1.0, abs(momentum) * 4.0)
 
     return p_tai, conf
@@ -347,32 +307,22 @@ def engine_ema_momentum(seq: list) -> tuple:
 # 🧠 ENGINE 5: TONG DISTRIBUTION ANALYSIS
 # ==========================================
 def engine_tong_distribution(tong_list: list) -> tuple:
-    """
-    Phân tích phân phối tổng điểm chi tiết hơn (không chỉ mean).
-    - Dùng rolling z-score để phát hiện lệch
-    - Phân tích histogram: bucket nào đang hot?
-    - Mean reversion signal
-    """
     if len(tong_list) < 10:
         return 0.5, 0.0
 
     recent  = tong_list[-40:]
     MEAN_T  = 10.5
-    STD_T   = 2.415  # std lý thuyết 3 dice d6
+    STD_T   = 2.415  
 
-    # Z-score của mean gần đây
     m       = sum(recent) / len(recent)
     z       = (m - MEAN_T) / (STD_T / math.sqrt(len(recent)))
 
-    # Mean reversion: z cao → lean XỈU (p_tai thấp)
     p_tai   = _sigmoid(-z * 0.5)
     conf    = min(1.0, abs(z) / 2.0)
 
-    # Thêm: nếu nhiều ván liên tiếp ở biên (3-6 hoặc 15-18) → drift
     extremes = sum(1 for t in recent[-10:] if t <= 6 or t >= 15)
     if extremes >= 4:
-        # Nhiều extreme → trung tâm (10-11) có khả năng cao
-        p_tai = 0.5 + (p_tai - 0.5) * 0.3   # giảm signal
+        p_tai = 0.5 + (p_tai - 0.5) * 0.3   
         conf  *= 0.5
 
     return p_tai, conf
@@ -382,11 +332,6 @@ def engine_tong_distribution(tong_list: list) -> tuple:
 # 🧠 ENGINE 6: FOURIER PERIODICITY DETECTOR
 # ==========================================
 def engine_fourier_period(seq: list) -> tuple:
-    """
-    FFT để phát hiện chu kỳ ẩn trong chuỗi TX.
-    Nếu có chu kỳ mạnh → dự đoán theo chu kỳ đó.
-    Đây là engine độc đáo nhất — phát hiện pattern tuần hoàn.
-    """
     if len(seq) < 20:
         return 0.5, 0.0
 
@@ -396,7 +341,6 @@ def engine_fourier_period(seq: list) -> tuple:
     fft_vals = np.abs(np.fft.rfft(arr))
     freqs    = np.fft.rfftfreq(len(arr))
 
-    # Bỏ qua DC component (idx 0) và tìm dominant frequency
     fft_vals[0] = 0
     if len(fft_vals) < 2:
         return 0.5, 0.0
@@ -408,27 +352,22 @@ def engine_fourier_period(seq: list) -> tuple:
     if total_pow == 0:
         return 0.5, 0.0
 
-    rel_power = dom_power / total_pow   # [0,1]: phần power của dominant frequency
+    rel_power = dom_power / total_pow   
 
-    # Confidence chỉ cao khi chu kỳ nổi bật (> 15% tổng power)
     if rel_power < 0.12:
         return 0.5, 0.0
 
-    # Tính phase: vị trí hiện tại trong chu kỳ → dự đoán bước tiếp theo
     period    = 1.0 / (freqs[dom_idx] + 1e-9)
     pos_in_cycle = len(window) % max(1, round(period))
     phase_ratio  = pos_in_cycle / max(1, round(period))
 
-    # Dự đoán theo Fourier: phase 0-0.5 → xu hướng T; 0.5-1.0 → X
-    # Đây là heuristic đơn giản — refinement từ thực tế
-    if arr[-1] > 0:  # Ván cuối là TÀI
-        # Theo wave: nếu đang ở đỉnh → tiếp tục hoặc giảm
+    if arr[-1] > 0:  
         p_tai = 0.5 - 0.15 * rel_power * math.cos(2 * math.pi * phase_ratio)
     else:
         p_tai = 0.5 + 0.15 * rel_power * math.cos(2 * math.pi * phase_ratio)
 
     p_tai = max(0.2, min(0.8, p_tai))
-    conf  = min(1.0, rel_power * 3.0) * 0.6   # Cap confidence của Fourier
+    conf  = min(1.0, rel_power * 3.0) * 0.6   
 
     return p_tai, conf
 
@@ -437,15 +376,6 @@ def engine_fourier_period(seq: list) -> tuple:
 # 🧠 ENGINE 7: REGIME DETECTOR (HOT / COLD / CHOP)
 # ==========================================
 def engine_regime(seq: list) -> tuple:
-    """
-    Phân loại chế độ hiện tại của game vào 3 loại:
-    - HOT_T: TÀI đang áp đảo → lean TÀI
-    - HOT_X: XỈU đang áp đảo → lean XỈU
-    - CHOP:  Xen kẽ cao → lean tiếp tục xen kẽ
-    - NEUTRAL: 50/50
-
-    Dùng 3 cửa sổ thời gian khác nhau (5, 15, 30) để xác nhận chéo.
-    """
     if len(seq) < 10:
         return 0.5, 0.0
 
@@ -460,15 +390,12 @@ def engine_regime(seq: list) -> tuple:
     f5, f15, f30  = freq_t(5), freq_t(15), freq_t(30)
     c5, c15       = chop_rate(5), chop_rate(15)
 
-    # Regime CHOP: chop_rate cao liên tục
     if c5 > 0.70 and c15 > 0.65:
-        # Xen kẽ mạnh → ván tiếp theo đảo chiều ván cuối
         last  = seq[-1]
         p_tai = 0.30 if last == 'T' else 0.70
         conf  = min(1.0, (c5 - 0.70) * 5.0 + (c15 - 0.65) * 3.0)
         return p_tai, conf
 
-    # Regime HOT: cả 3 cửa sổ đồng thuận lệch một chiều
     if f5 > 0.70 and f15 > 0.60 and f30 > 0.55:
         p_tai = 0.65
         conf  = min(1.0, (f5 - 0.5) * 1.5)
@@ -479,7 +406,6 @@ def engine_regime(seq: list) -> tuple:
         conf  = min(1.0, (0.5 - f5) * 1.5)
         return p_tai, conf
 
-    # Neutral
     return (f30 * 0.4 + f15 * 0.35 + f5 * 0.25), 0.15
 
 
@@ -487,35 +413,24 @@ def engine_regime(seq: list) -> tuple:
 # 🧠 ENGINE 8: META-LEARNER (Accuracy Tracker Per Engine)
 # ==========================================
 class MetaLearner:
-    """
-    Theo dõi độ chính xác của từng engine theo rolling window.
-    Engine nào đang đúng nhiều → weight tăng; sai nhiều → weight giảm.
-    Đây là lớp học tăng cường (reinforcement) đơn giản.
-    """
     def __init__(self, n_engines: int = 8, window: int = 30):
         self.n         = n_engines
         self.window    = window
         self.histories = [collections.deque(maxlen=window) for _ in range(n_engines)]
 
     def update(self, engine_preds: list, actual: str):
-        """Ghi kết quả đúng/sai cho từng engine."""
         for i, p in enumerate(engine_preds):
             pred_label = 'T' if p >= 0.5 else 'X'
             correct    = 1 if pred_label == actual else 0
             self.histories[i].append(correct)
 
     def get_accuracy_weights(self) -> list:
-        """
-        Trả về trọng số bổ sung cho mỗi engine dựa trên accuracy gần đây.
-        Engine ≥70% acc → bonus; < 40% acc → penalty.
-        """
         weights = []
         for hist in self.histories:
             if len(hist) < 5:
                 weights.append(1.0)
             else:
                 acc = sum(hist) / len(hist)
-                # Sigmoid-like mapping: 70%→1.4, 50%→1.0, 30%→0.6
                 w = 0.5 + acc * 1.2
                 weights.append(round(w, 3))
         return weights
@@ -525,25 +440,13 @@ class MetaLearner:
 # 🧠 CORE: ADAPTIVE BAYESIAN ENSEMBLE
 # ==========================================
 def adaptive_bayesian_combine(
-    engine_results: list,   # list of (p_tai, confidence) tuples
+    engine_results: list,   
     base_weights: list,
     meta_weights: list,
     entropy: float,
     runs_pval: float,
     autocorr: float
 ) -> tuple:
-    """
-    Kết hợp tất cả engine với:
-    1. Base weights (Optuna)
-    2. Engine confidence (tự báo cáo)
-    3. Meta-learning weights (rolling accuracy)
-    4. Entropy scaling (thị trường ngẫu nhiên → thu về 50/50)
-    5. Runs test: nếu chuỗi thực sự ngẫu nhiên → giảm signal mạnh
-    6. Autocorrelation-aware: nếu autocorr dương → ủng hộ continuation
-
-    Trả về (p_tai_final, overall_confidence)
-    """
-    # --- Entropy scale: chuỗi càng ngẫu nhiên → scale xuống ---
     if entropy > 0.92:
         entropy_scale = 0.25
     elif entropy > 0.80:
@@ -553,9 +456,7 @@ def adaptive_bayesian_combine(
     else:
         entropy_scale = 1.0
 
-    # --- Runs test scale: p > 0.5 → likely random → giảm thêm ---
     runs_scale = 1.0 - max(0.0, runs_pval - 0.20) * 0.8
-
     combined_scale = entropy_scale * runs_scale
 
     log_odds_sum  = 0.0
@@ -565,7 +466,6 @@ def adaptive_bayesian_combine(
     for i, (p_tai, conf) in enumerate(engine_results):
         bw    = base_weights[i]
         mw    = meta_weights[i]
-        # Confidence điều chỉnh weight: engine tự báo conf thấp → giảm bớt
         eff_w = bw * mw * max(0.3, conf + 0.4)
 
         lo    = _to_log_odds(p_tai)
@@ -576,11 +476,8 @@ def adaptive_bayesian_combine(
     if weight_sum == 0:
         return 0.5, 0.0
 
-    # Autocorrelation bias: nếu chuỗi có xu hướng continuation/reversal
-    # autocorr > 0.1 → lean tiếp tục ván cuối
-    # autocorr < -0.1 → lean đảo chiều
     if abs(autocorr) > 0.08:
-        autocorr_lo   = autocorr * 0.4  # Nhỏ thôi
+        autocorr_lo   = autocorr * 0.4  
         log_odds_sum += autocorr_lo * combined_scale
 
     p_tai_final  = _sigmoid(log_odds_sum)
@@ -605,20 +502,20 @@ class SunwinLogic_v8:
 
         # --- BASE WEIGHTS 8 ENGINE ---
         self.weights = [
-            3.0,   # E1: Markov BIC
-            2.5,   # E2: N-gram chi-square
+            2.0,   # E1: Markov BIC
+            4.0,   # E2: N-gram chi-square (Boost patterns)
             1.8,   # E3: Streak hazard
             1.2,   # E4: EMA momentum
             0.5,   # E5: Tong distribution
             0.7,   # E6: Fourier period
             1.5,   # E7: Regime detector
-            0.0,   # E8: placeholder (meta weights applied separately)
+            0.0,   # E8: placeholder 
         ]
 
         # --- META-LEARNER ---
         self.meta = MetaLearner(n_engines=7, window=30)
 
-        # --- BAIT MATRIX (giữ từ v7, đã hoạt động tốt) ---
+        # --- BAIT MATRIX ---
         self.last_engine_preds   = None
         self.last_final_pred     = None
         self.last_raw_pred       = None
@@ -739,13 +636,13 @@ class SunwinLogic_v8:
 
         def objective(trial):
             ws = [
-                trial.suggest_float('w0', 0.5, 6.0),   # Markov BIC
-                trial.suggest_float('w1', 0.5, 5.0),   # N-gram chi2
-                trial.suggest_float('w2', 0.2, 4.0),   # Streak hazard
-                trial.suggest_float('w3', 0.1, 3.0),   # EMA momentum
-                trial.suggest_float('w4', 0.0, 1.5),   # Tong dist
-                trial.suggest_float('w5', 0.0, 2.0),   # Fourier
-                trial.suggest_float('w6', 0.2, 3.5),   # Regime
+                trial.suggest_float('w0', 0.5, 6.0),   
+                trial.suggest_float('w1', 0.5, 5.0),   
+                trial.suggest_float('w2', 0.2, 4.0),   
+                trial.suggest_float('w3', 0.1, 3.0),   
+                trial.suggest_float('w4', 0.0, 1.5),   
+                trial.suggest_float('w5', 0.0, 2.0),   
+                trial.suggest_float('w6', 0.2, 3.5),   
             ]
 
             test_len = min(35, len(data) - REQUIRED_LEN)
@@ -756,7 +653,7 @@ class SunwinLogic_v8:
                 if len(past) < REQUIRED_LEN:
                     continue
 
-                seq       = ["T" if x['tong'] > 10 else "X" for x in past[-300:]]
+                seq       = ["T" if x['tong'] > 10 else "X" for x in past[-200:]]
                 tong_list = [x['tong'] for x in past[-60:]]
                 entropy   = shannon_entropy(seq)
                 runs_pval = runs_test_pvalue(seq)
@@ -807,7 +704,7 @@ class SunwinLogic_v8:
             self.sync_to_dashboard(next_session_id, "WAIT", msg)
             return
 
-        seq       = ["T" if x['tong'] > 10 else "X" for x in data[-300:]]
+        seq       = ["T" if x['tong'] > 10 else "X" for x in data[-200:]]
         tong_list = [x['tong'] for x in data[-80:]]
 
         # ─── PHÂN TÍCH THỐNG KÊ ───
@@ -815,7 +712,6 @@ class SunwinLogic_v8:
         runs_pval = runs_test_pvalue(seq)
         autocorr  = autocorrelation_lag1(seq)
 
-        # Labels cho log
         if entropy > 0.92:
             ent_label = "🔴 CAO — ngẫu nhiên mạnh"
         elif entropy > 0.75:
@@ -848,10 +744,13 @@ class SunwinLogic_v8:
         w7      = self.weights[:7]
 
         # ─── TỔNG HỢP ADAPTIVE BAYESIAN ───
-        p_tai, overall_conf = adaptive_bayesian_combine(
+        p_tai_raw, overall_conf = adaptive_bayesian_combine(
             engine_results, w7, meta_ws,
             entropy, runs_pval, autocorr
         )
+        
+        # Đảo ngược kết quả logic tự động 
+        p_tai = 1.0 - p_tai_raw
         p_xiu = 1.0 - p_tai
 
         # ─── CHỐT GỐC ───
@@ -895,7 +794,7 @@ class SunwinLogic_v8:
         print(f"   => CHỐT GỐC : {chot_goc} ({conf_percent}%)  [Bucket {bucket}%]")
 
         # ─── BAIT MATRIX ───
-        nguong    = 4 if current_wr >= 55 else 3
+        nguong    = 4 
         note      = ""
         chot_cuoi = chot_goc
 
@@ -967,7 +866,7 @@ class SunwinLogic_v8:
 
             # --- Bait matrix update ---
             current_wr = (self.total_won / self.total_played * 100) if self.total_played > 0 else 50.0
-            nguong     = 4 if current_wr >= 55 else 3
+            nguong     = 4  
 
             if self.last_raw_key is not None and self.last_raw_bucket is not None:
                 raw_correct = (self.last_raw_pred == actual_full)
