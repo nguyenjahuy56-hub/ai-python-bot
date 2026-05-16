@@ -4,6 +4,7 @@ import unicodedata
 import json
 import os
 import hashlib
+from pymongo import MongoClient
 
 # ================= CẤU HÌNH THÔNG SỐ AI =================
 MAX_SAMPLES_TONG = 5  
@@ -15,7 +16,19 @@ WEIGHT_DICE = 0.55
 API_URL = 'http://localhost:3001/api/ddvipro'
 SYNC_URL = 'http://localhost:3001/api/update-prediction'
 FETCH_INTERVAL = 1.2
-HISTORY_FILE = "sunwin_history_dice.json"
+
+# CẤU HÌNH KẾT NỐI MONGODB CLOUD
+MONGO_URI = "mongodb+srv://huylog333_db_user:engL1VIN3XA7egZY@cluster0.2myhlng.mongodb.net/?appName=Cluster0"
+
+try:
+    mongo_client = MongoClient(MONGO_URI, serverSelectionTimeoutMS=8000, connectTimeoutMS=8000)
+    db           = mongo_client['sunwin_database']
+    collection   = db['history']
+    mongo_client.admin.command('ping')
+    print("✅ KẾT NỐI MONGODB THÀNH CÔNG!")
+except Exception as e:
+    print(f"❌ LỖI KẾT NỐI MONGODB: {e}")
+    collection   = None
 
 class TaiXiuAI:
     def __init__(self):
@@ -33,22 +46,36 @@ class TaiXiuAI:
         self.load_memory()
 
     def load_memory(self):
+        if collection is None:
+            print("⚠️ Không có kết nối DB, chạy với bộ nhớ trống.")
+            return
         try:
-            if os.path.exists(HISTORY_FILE):
-                with open(HISTORY_FILE, 'r', encoding='utf-8') as f:
-                    self.raw_history = json.load(f)
-                print(f"✅ Đã khôi phục {len(self.raw_history)} ván lịch sử!")
-        except Exception:
-            pass
+            doc = collection.find_one({'config': 'history_array'})
+            if doc and 'data' in doc:
+                self.raw_history = doc['data']
+                print(f"✅ Đã khôi phục {len(self.raw_history)} ván lịch sử từ MongoDB Cloud!")
+            else:
+                print("ℹ️ Thư mục database trống, bắt đầu cào mới.")
+                self.raw_history = []
+        except Exception as e:
+            print(f"❌ LỖI ĐỌC DATABASE: {e}")
+            self.raw_history = []
 
     def save_history(self):
+        if collection is None:
+            return
         try:
-            if len(self.raw_history) > 2000:
-                self.raw_history = self.raw_history[-2000:]
-            with open(HISTORY_FILE, 'w', encoding='utf-8') as f:
-                json.dump(self.raw_history, f)
-        except Exception:
-            pass
+            # Giới hạn mảng lưu trữ tránh quá tải gói database free
+            if len(self.raw_history) > 1500:
+                self.raw_history = self.raw_history[-1500:]
+            
+            collection.update_one(
+                {'config': 'history_array'},
+                {'$set': {'data': self.raw_history}},
+                upsert=True
+            )
+        except Exception as e:
+            print(f"❌ LỖI ĐỒNG BỘ DATA LÊN MONGODB: {e}")
 
     def extract_data_list(self, json_data):
         if isinstance(json_data, list): return json_data
@@ -103,7 +130,6 @@ class TaiXiuAI:
         return min(round(62 + (delta * 1.8), 1), 98.8)
 
     def sync_to_dashboard(self, pred_result, confidence, detail):
-        # Tính WR 15 ván gần nhất
         if len(self.recent_15_results) > 0:
             wr = (sum(self.recent_15_results) / len(self.recent_15_results)) * 100
         else:
@@ -123,7 +149,7 @@ class TaiXiuAI:
             pass
 
     def run(self):
-        print("🔥 SERVER AI ĐỌC VỊ ĐANG CHẠY - ĐỒNG BỘ DASHBOARD V17...")
+        print("🔥 SERVER AI ĐỌC VỊ ĐANG CHẠY - ĐỒNG BỘ MONGODB CLOUD & DASHBOARD...")
         while True:
             try:
                 resp = requests.get(API_URL, timeout=3)
@@ -163,34 +189,31 @@ class TaiXiuAI:
                     
                 self.last_hash = str(phien)
                 
-                # Check thắng thua & tính WR 15 ván
                 if self.last_prediction is not None and self.predicted_phien == int(phien):
                     won = (self.last_prediction == res_val)
                     actual_str = "TÀI" if res_val == 1 else "XỈU"
                     
                     if not won:
                         self.error_streak += 1
-                        print(f"❌ Ván {phien} GÃY! (Chuỗi gãy: {self.error_streak})")
+                        print(f"❌ Phiên {phien} GÃY! (Chuỗi gãy hiện tại: {self.error_streak})")
                     else:
                         self.error_streak = 0
-                        print(f"✅ Ván {phien} HÚP!")
+                        print(f"✅ Phiên {phien} HÚP!")
 
-                    # Thêm kết quả vào mảng 15 ván cuốn chiếu
+                    # Cuốn chiếu mảng 15 ván gần nhất
                     self.recent_15_results.append(won)
                     if len(self.recent_15_results) > 15:
                         self.recent_15_results.pop(0) 
                     
-                    # Update kết quả thực tế vào dashboard history
                     if len(self.dashboard_history) > 0 and self.dashboard_history[-1]['phien'] == self.predicted_phien:
                         self.dashboard_history[-1]['actual'] = actual_str
                         self.dashboard_history[-1]['win'] = won
 
-                # Lưu vào lịch sử
+                # Đẩy kết quả mới vào bộ nhớ cục bộ và ghi đè đồng bộ lên MongoDB cloud
                 self.raw_history.append({'phien': phien, 'result': res_val, 'tong': tong, 'dice': dice_str})
                 self.save_history()
                 
                 print(f"\n🎲 KQ Phiên {phien}: {'TÀI' if res_val==1 else 'XỈU'} | Tổng: {tong} | Xúc xắc: {dice_str}")
-                
                 self.predict_next()
                 
             except Exception as e:
@@ -200,7 +223,7 @@ class TaiXiuAI:
 
     def predict_next(self):
         if len(self.raw_history) < 3: 
-            print("⏳ Đang thu thập thêm dữ liệu để AI học các mẫu...")
+            print("⏳ Đang tích lũy thêm dữ liệu vào MongoDB để AI học...")
             return
             
         last_round = self.raw_history[-1]
@@ -218,19 +241,16 @@ class TaiXiuAI:
         final_prob_tai = (WEIGHT_TONG * prob_tong_tai) + (WEIGHT_DICE * prob_dice_tai)
         raw_pred = 1 if final_prob_tai >= 0.5 else 0
         
-        # =========================================================
-        # LOGIC BẺ CẦU MỚI: Sai 2 tay thì bẻ tay 3, qua tay 4 tắt bẻ
-        # =========================================================
+        # LOGIC BẺ CẦU: Sai đúng 2 tay liên tiếp thì ép bẻ tay 3, từ tay 4 tắt bẻ quay về thuận logic
         if self.error_streak == 2:
-            print("⚠️ CẢNH BÁO: ĐÃ SAI 2 TAY LIÊN TIẾP -> KÍCH HOẠT BẺ CẦU TAY 3 NÀY!")
+            print("⚠️ KÍCH HOẠT BẺ CẦU TAY THỨ 3!")
             final_pred = 1 - raw_pred
-            detail_msg = f"Đọc Vị | ÉP BẺ CẦU (Đã gãy 2)"
-            # Không reset error_streak. Để nếu tay này gãy tiếp nó sẽ lên 3, tắt bẻ.
+            detail_msg = f"Đọc Vị | ÉP BẺ CẦU (Gãy 2)"
         else:
             final_pred = raw_pred
             detail_msg = f"Đọc Vị | T:{target_tong} B:{target_dice}"
             if self.error_streak >= 3:
-                print(f"🔄 Đang chuỗi gãy {self.error_streak} tay -> Tắt bẻ, quay về đánh thuận logic!")
+                print(f"🔄 Chuỗi gãy đang là {self.error_streak} -> Đã tắt chế độ bẻ, đánh thuận logic.")
             
         self.last_prediction = final_pred
         
@@ -242,26 +262,21 @@ class TaiXiuAI:
         self.predicted_phien = next_phien
         pred_str = "TÀI" if final_pred == 1 else "XỈU"
 
-        # Đẩy ván dự đoán mới vào lịch sử UI
         self.dashboard_history.append({
-            "phien": next_phien,
-            "pred": pred_str,
-            "actual": None,
-            "win": None
+            "phien": next_phien, "pred": pred_str, "actual": None, "win": None
         })
         if len(self.dashboard_history) > 20:
             self.dashboard_history.pop(0)
 
-        # Bắn data lên Dashboard
         self.sync_to_dashboard(pred_str, confidence_rate, detail_msg)
 
         pt_tong_hien_thi = prob_tong_tai if prob_tong_tai > 0.5 else (1 - prob_tong_tai)
         pt_dice_hien_thi = prob_dice_tai if prob_dice_tai > 0.5 else (1 - prob_dice_tai)
 
-        print(f"🔍 Dữ liệu phân tích (Ván trước: Tổng {target_tong}, Bộ {target_dice}):")
-        print(f"  > {MAX_SAMPLES_TONG} lần gần nhất Tổng thiên về: {'TÀI' if prob_tong_tai > 0.5 else 'XỈU'} ({pt_tong_hien_thi*100:.0f}%)")
-        print(f"  > {MAX_SAMPLES_DICE} lần gần nhất Bộ thiên về: {'TÀI' if prob_dice_tai > 0.5 else 'XỈU'} ({pt_dice_hien_thi*100:.0f}%)")
-        print(f"🎯 Phiên {next_phien} | Dự đoán chốt: {pred_str} | Tỉ lệ ăn: {confidence_rate}%")
+        print(f"🔍 Dữ liệu mẫu (Ván trước: Tổng {target_tong}, Bộ {target_dice}):")
+        print(f"  > Mẫu Tổng thiên về: {'TÀI' if prob_tong_tai > 0.5 else 'XỈU'} ({pt_tong_hien_thi*100:.0f}%)")
+        print(f"  > Mẫu Bộ thiên về: {'TÀI' if prob_dice_tai > 0.5 else 'XỈU'} ({pt_dice_hien_thi*100:.0f}%)")
+        print(f"🎯 Phiên {next_phien} | Dự đoán: {pred_str} | Tỉ lệ toán học: {confidence_rate}%")
 
 if __name__ == "__main__":
     bot = TaiXiuAI()
