@@ -23,7 +23,7 @@ MONGO_URI = "mongodb+srv://huylog333_db_user:engL1VIN3XA7egZY@cluster0.2myhlng.m
 try:
     mongo_client = MongoClient(MONGO_URI, serverSelectionTimeoutMS=8000, connectTimeoutMS=8000)
     db           = mongo_client['sunwin_database']
-    collection   = db['history']
+    collection   = db['history_docvi']
     mongo_client.admin.command('ping')
     print("✅ KẾT NỐI MONGODB THÀNH CÔNG!")
 except Exception as e:
