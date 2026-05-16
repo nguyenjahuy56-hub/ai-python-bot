@@ -13,8 +13,8 @@ WEIGHT_TONG = 0.45
 WEIGHT_DICE = 0.55     
 # ========================================================
 
-API_URL = 'http://localhost:3001/api/ddvipro'
-SYNC_URL = 'http://localhost:3001/api/update-prediction'
+API_URL = 'https://apisun-production-8d96.up.railway.app/api/ddvipro'
+SYNC_URL = 'https://apisun-production-8d96.up.railway.app/api/update-prediction'
 FETCH_INTERVAL = 1.2
 
 # CẤU HÌNH KẾT NỐI MONGODB CLOUD
