@@ -253,10 +253,10 @@ class SunwinAI(BaseTaiXiuAI):
         v3 = self.raw_history[-1]['tong']
         confidence_rate = self.get_confidence_rate(v1, v2, v3)
         
-        if self.error_streak == 4:
-            print("[♠️ SUNWIN] ⚠️ GÃY 4 TAY -> KÍCH HOẠT BẺ CẦU TAY THỨ 5!")
+        if self.error_streak == 1:
+            print("[♠️ SUNWIN] ⚠️ GÃY 4 TAY -> KÍCH HOẠT BẺ CẦU TAY THỨ 2!")
             final_pred = 1 - raw_pred
-            detail_msg = f"{logic_mode} | ÉP BẺ CẦU (Gãy 4)"
+            detail_msg = f"{logic_mode} | ÉP BẺ CẦU (Gãy 1)"
         else:
             final_pred = raw_pred
             detail_msg = f"{logic_mode} | T:{target_tong} B:{target_dice}"
@@ -419,10 +419,10 @@ class HitclubAI(BaseTaiXiuAI):
         v3 = self.raw_history[-1]['tong']
         confidence_rate = self.get_confidence_rate(v1, v2, v3)
         
-        if self.error_streak == 4:
-            print("[♦️ HITCLUB] ⚠️ GÃY 4 TAY -> KÍCH HOẠT BẺ CẦU TAY THỨ 5!")
+        if self.error_streak == 1:
+            print("[♦️ HITCLUB] ⚠️ GÃY 4 TAY -> KÍCH HOẠT BẺ CẦU TAY THỨ 2!")
             final_pred = 1 - raw_pred
-            detail_msg = f"{logic_mode} | ÉP BẺ CẦU (Gãy 4)"
+            detail_msg = f"{logic_mode} | ÉP BẺ CẦU (Gãy 1)"
         else:
             final_pred = raw_pred
             detail_msg = f"{logic_mode} | T:{target_tong} B:{target_dice}"
