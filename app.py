@@ -24,7 +24,7 @@ HITCLUB_WEIGHT_DICE = 0.55
 HITCLUB_SAMPLE_DECAY = 0.85     
 
 # 🌐 CẤU HÌNH SERVER NODEJS & DATABASE LOCAL
-NODEJS_SERVER = "http://localhost:3001" 
+https://apisun-production-8d96.up.railway.app/
 FETCH_INTERVAL = 1.2
 HITCLUB_HISTORY_FILE = "datahitclubmd5.json"
 
