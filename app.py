@@ -10,8 +10,8 @@ from pymongo import MongoClient
 # ================= CẤU HÌNH THÔNG SỐ AI (ĐÃ TÁCH RIÊNG & THÊM TRỌNG SỐ THỜI GIAN) =================
 
 # ♠️ THÔNG SỐ AI CHO SUNWIN
-SUNWIN_MAX_SAMPLES_TONG = 4     # Số lần quét lại lịch sử cho TỔNG 
-SUNWIN_MAX_SAMPLES_DICE = 2    # Số lần quét lại lịch sử cho BỘ XÚC XẮC 
+SUNWIN_MAX_SAMPLES_TONG = 7     # Số lần quét lại lịch sử cho TỔNG 
+SUNWIN_MAX_SAMPLES_DICE = 6    # Số lần quét lại lịch sử cho BỘ XÚC XẮC 
 SUNWIN_WEIGHT_TONG = 0.50       # Trọng số của Tổng so với Xúc Xắc (45%)
 SUNWIN_WEIGHT_DICE = 0.50       # Trọng số của Xúc Xắc so với Tổng (55%)
 SUNWIN_SAMPLE_DECAY = 1      # Độ suy giảm trọng số mẫu cũ (1.0 là ko giảm. 0.85 là tối ưu nhất: 100% -> 85% -> 72%...)
