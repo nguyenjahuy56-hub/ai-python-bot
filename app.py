@@ -4,79 +4,31 @@ import unicodedata
 import json
 import os
 import hashlib
+import threading
 from pymongo import MongoClient
 
-# ================= CẤU HÌNH THÔNG SỐ AI =================
-MAX_SAMPLES_TONG = 8  
-MAX_SAMPLES_DICE = 10  
-WEIGHT_TONG = 0.45     
-WEIGHT_DICE = 0.55     
-# ========================================================
-
-API_URL = 'https://apisun-production-8d96.up.railway.app/api/ddvipro'
-SYNC_URL = 'https://apisun-production-8d96.up.railway.app/api/update-prediction'
+# ================= CẤU HÌNH SERVER NODEJS =================
+# Đổi thành domain Railway của Nodejs nếu m deploy lên cloud
+NODEJS_SERVER = "http://localhost:3001" 
 FETCH_INTERVAL = 1.2
+# ==========================================================
 
-# CẤU HÌNH KẾT NỐI MONGODB CLOUD
+# CẤU HÌNH KẾT NỐI MONGODB (Cho Sunwin)
 MONGO_URI = "mongodb+srv://huylog333_db_user:engL1VIN3XA7egZY@cluster0.2myhlng.mongodb.net/?appName=Cluster0"
-
 try:
     mongo_client = MongoClient(MONGO_URI, serverSelectionTimeoutMS=8000, connectTimeoutMS=8000)
-    db           = mongo_client['sunwin_database']
-    collection   = db['history_docvi']
+    db = mongo_client['sunwin_database']
+    sunwin_collection = db['history_docvi']
     mongo_client.admin.command('ping')
-    print("✅ KẾT NỐI MONGODB THÀNH CÔNG!")
+    print("✅ KẾT NỐI MONGODB SUNWIN THÀNH CÔNG!")
 except Exception as e:
     print(f"❌ LỖI KẾT NỐI MONGODB: {e}")
-    collection   = None
+    sunwin_collection = None
 
-class TaiXiuAI:
-    def __init__(self):
-        self.raw_history = []
-        self.last_hash = None
-        self.last_prediction = None
-        self.predicted_phien = None
-        self.error_streak = 0
-        
-        # Mảng tính WR 15 ván cuốn chiếu
-        self.recent_15_results = [] 
-        # Mảng lưu lịch sử hiển thị trên Dashboard (tối đa 20 ván cho UI)
-        self.dashboard_history = [] 
-        
-        self.load_memory()
-
-    def load_memory(self):
-        if collection is None:
-            print("⚠️ Không có kết nối DB, chạy với bộ nhớ trống.")
-            return
-        try:
-            doc = collection.find_one({'config': 'history_array'})
-            if doc and 'data' in doc:
-                self.raw_history = doc['data']
-                print(f"✅ Đã khôi phục {len(self.raw_history)} ván lịch sử từ MongoDB Cloud!")
-            else:
-                print("ℹ️ Thư mục database trống, bắt đầu cào mới.")
-                self.raw_history = []
-        except Exception as e:
-            print(f"❌ LỖI ĐỌC DATABASE: {e}")
-            self.raw_history = []
-
-    def save_history(self):
-        if collection is None:
-            return
-        try:
-            # Giới hạn mảng lưu trữ tránh quá tải gói database free
-            if len(self.raw_history) > 1500:
-                self.raw_history = self.raw_history[-1500:]
-            
-            collection.update_one(
-                {'config': 'history_array'},
-                {'$set': {'data': self.raw_history}},
-                upsert=True
-            )
-        except Exception as e:
-            print(f"❌ LỖI ĐỒNG BỘ DATA LÊN MONGODB: {e}")
-
+# ==========================================================
+# LỚP AI ĐỌC VỊ CHUNG (Các hàm dùng chung)
+# ==========================================================
+class BaseTaiXiuAI:
     def extract_data_list(self, json_data):
         if isinstance(json_data, list): return json_data
         if isinstance(json_data, dict):
@@ -97,25 +49,25 @@ class TaiXiuAI:
         if s in ['XIU', 'X', '0', 'FALSE']: return 0
         return None
 
-    def get_prob_by_tong(self, history, target_tong):
+    def get_prob_by_tong(self, history, target_tong, max_samples):
         tai_count = 0
         total_matched = 0
         for i in range(len(history) - 2, -1, -1):
             if history[i]['tong'] == target_tong:
                 total_matched += 1
                 if history[i + 1]['result'] == 1: tai_count += 1
-                if total_matched >= MAX_SAMPLES_TONG: break
+                if total_matched >= max_samples: break
         if total_matched == 0: return 0.5 
         return tai_count / total_matched
 
-    def get_prob_by_dice(self, history, target_dice_str):
+    def get_prob_by_dice(self, history, target_dice_str, max_samples):
         tai_count = 0
         total_matched = 0
         for i in range(len(history) - 2, -1, -1):
             if history[i]['dice'] == target_dice_str:
                 total_matched += 1
                 if history[i + 1]['result'] == 1: tai_count += 1
-                if total_matched >= MAX_SAMPLES_DICE: break
+                if total_matched >= max_samples: break
         if total_matched == 0: return 0.5 
         return tai_count / total_matched
 
@@ -129,7 +81,7 @@ class TaiXiuAI:
         delta = abs(high_byte - low_byte)
         return min(round(62 + (delta * 1.8), 1), 98.8)
 
-    def sync_to_dashboard(self, pred_result, confidence, detail):
+    def sync_to_dashboard(self, pred_result, confidence, detail, sync_url):
         if len(self.recent_15_results) > 0:
             wr = (sum(self.recent_15_results) / len(self.recent_15_results)) * 100
         else:
@@ -144,43 +96,117 @@ class TaiXiuAI:
             "history": self.dashboard_history[::-1] 
         }
         try:
-            requests.post(SYNC_URL, json=payload, timeout=3)
+            requests.post(sync_url, json=payload, timeout=3)
         except:
             pass
 
+# ==========================================================
+# LUỒNG 1: AI SUNWIN
+# ==========================================================
+class SunwinAI(BaseTaiXiuAI):
+    def __init__(self):
+        self.max_samples_tong = 13  
+        self.max_samples_dice = 8  
+        self.weight_tong = 0.45     
+        self.weight_dice = 0.55
+        
+        self.api_url = f"{NODEJS_SERVER}/api/sunwin/live"
+        self.sync_url = f"{NODEJS_SERVER}/api/sunwin/update-prediction"
+        
+        self.raw_history = []
+        self.last_hash = None
+        self.last_prediction = None
+        self.predicted_phien = None
+        self.error_streak = 0
+        self.recent_15_results = [] 
+        self.dashboard_history = [] 
+        
+        self.load_memory()
+
+    def load_memory(self):
+        if sunwin_collection is None:
+            return
+        try:
+            doc = sunwin_collection.find_one({'config': 'history_array'})
+            if doc and 'data' in doc:
+                self.raw_history = doc['data']
+            else:
+                self.raw_history = []
+        except Exception:
+            self.raw_history = []
+
+    def save_history(self):
+        if sunwin_collection is None: return
+        try:
+            if len(self.raw_history) > 1500:
+                self.raw_history = self.raw_history[-1500:]
+            sunwin_collection.update_one(
+                {'config': 'history_array'},
+                {'$set': {'data': self.raw_history}},
+                upsert=True
+            )
+        except Exception:
+            pass
+
+    def predict_next(self):
+        if len(self.raw_history) < 3: return
+            
+        last_round = self.raw_history[-1]
+        target_tong = last_round['tong']
+        target_dice = last_round['dice']
+        
+        prob_tong_tai = self.get_prob_by_tong(self.raw_history, target_tong, self.max_samples_tong)
+        prob_dice_tai = self.get_prob_by_dice(self.raw_history, target_dice, self.max_samples_dice)
+        
+        v1 = self.raw_history[-3]['tong'] if len(self.raw_history) >= 3 else 10
+        v2 = self.raw_history[-2]['tong'] if len(self.raw_history) >= 2 else 10
+        v3 = self.raw_history[-1]['tong']
+        confidence_rate = self.get_confidence_rate(v1, v2, v3)
+        
+        final_prob_tai = (self.weight_tong * prob_tong_tai) + (self.weight_dice * prob_dice_tai)
+        raw_pred = 1 if final_prob_tai >= 0.5 else 0
+        
+        # LOGIC BẺ CẦU SUNWIN
+        if self.error_streak == 4:
+            print("[♠️ SUNWIN] ⚠️ KÍCH HOẠT BẺ CẦU TAY THỨ 5!")
+            final_pred = 1 - raw_pred
+            detail_msg = f"Đọc Vị | ÉP BẺ CẦU (Gãy 4)"
+        else:
+            final_pred = raw_pred
+            detail_msg = f"Đọc Vị | T:{target_tong} B:{target_dice}"
+            if self.error_streak >= 5:
+                print(f"[♠️ SUNWIN] 🔄 Chuỗi gãy đang là {self.error_streak} -> Đã tắt bẻ cầu.")
+            
+        self.last_prediction = final_pred
+        next_phien = int(self.raw_history[-1]['phien']) + 1 if str(self.raw_history[-1]['phien']).isdigit() else "Tiếp"
+        self.predicted_phien = next_phien
+        pred_str = "TÀI" if final_pred == 1 else "XỈU"
+
+        self.dashboard_history.append({"phien": next_phien, "pred": pred_str, "actual": None, "win": None})
+        if len(self.dashboard_history) > 20: self.dashboard_history.pop(0)
+
+        self.sync_to_dashboard(pred_str, confidence_rate, detail_msg, self.sync_url)
+
     def run(self):
-        print("🔥 SERVER AI ĐỌC VỊ ĐANG CHẠY - ĐỒNG BỘ MONGODB CLOUD & DASHBOARD...")
+        print("🔥 [SUNWIN] ĐANG CHẠY LUỒNG AI ĐỌC VỊ...")
         while True:
             try:
-                resp = requests.get(API_URL, timeout=3)
+                resp = requests.get(self.api_url, timeout=3)
                 if not resp.ok: 
                     time.sleep(FETCH_INTERVAL)
                     continue
                     
-                json_data = resp.json()
-                data = self.extract_data_list(json_data)
-                if not data or len(data) == 0:
+                latest = resp.json()
+                phien = latest.get('Phien')
+                res_val = self.normalize_result(latest.get('Ket_qua'))
+                x1, x2, x3 = latest.get('Xuc_xac_1'), latest.get('Xuc_xac_2'), latest.get('Xuc_xac_3')
+                
+                if phien is None or res_val is None or x1 is None: 
                     time.sleep(FETCH_INTERVAL)
                     continue
                 
-                data.sort(key=lambda x: int(x.get('Phien', x.get('phien', x.get('id', 0)))), reverse=True)
-                latest = data[0]
-                phien = latest.get('Phien', latest.get('phien', latest.get('id', 'N/A')))
-                
-                result_str = next((latest[k] for k in ['Ket_qua', 'ket_qua', 'ketqua', 'resultTruyenThong', 'result', 'outcome'] if k in latest and latest[k] is not None), None)
-                res_val = self.normalize_result(result_str)
-                
-                x1 = latest.get('Xuc_xac_1', latest.get('x1', latest.get('dice1')))
-                x2 = latest.get('Xuc_xac_2', latest.get('x2', latest.get('dice2')))
-                x3 = latest.get('Xuc_xac_3', latest.get('x3', latest.get('dice3')))
-                
-                if res_val is None or x1 is None or x2 is None or x3 is None: 
-                    time.sleep(FETCH_INTERVAL)
-                    continue
-                
-                x1, x2, x3 = int(x1), int(x2), int(x3)
-                tong = x1 + x2 + x3
-                dice_tuple = sorted([x1, x2, x3])
+                tong = int(x1) + int(x2) + int(x3)
+                dice_tuple = sorted([int(x1), int(x2), int(x3)])
                 dice_str = f"{dice_tuple[0]}-{dice_tuple[1]}-{dice_tuple[2]}"
                 
                 if str(phien) == str(self.last_hash):
@@ -191,93 +217,172 @@ class TaiXiuAI:
                 
                 if self.last_prediction is not None and self.predicted_phien == int(phien):
                     won = (self.last_prediction == res_val)
-                    actual_str = "TÀI" if res_val == 1 else "XỈU"
-                    
                     if not won:
                         self.error_streak += 1
-                        print(f"❌ Phiên {phien} GÃY! (Chuỗi gãy hiện tại: {self.error_streak})")
                     else:
                         self.error_streak = 0
-                        print(f"✅ Phiên {phien} HÚP!")
-
-                    # Cuốn chiếu mảng 15 ván gần nhất
+                        
                     self.recent_15_results.append(won)
-                    if len(self.recent_15_results) > 15:
-                        self.recent_15_results.pop(0) 
+                    if len(self.recent_15_results) > 15: self.recent_15_results.pop(0) 
                     
                     if len(self.dashboard_history) > 0 and self.dashboard_history[-1]['phien'] == self.predicted_phien:
-                        self.dashboard_history[-1]['actual'] = actual_str
+                        self.dashboard_history[-1]['actual'] = "TÀI" if res_val == 1 else "XỈU"
                         self.dashboard_history[-1]['win'] = won
 
-                # Đẩy kết quả mới vào bộ nhớ cục bộ và ghi đè đồng bộ lên MongoDB cloud
                 self.raw_history.append({'phien': phien, 'result': res_val, 'tong': tong, 'dice': dice_str})
                 self.save_history()
-                
-                print(f"\n🎲 KQ Phiên {phien}: {'TÀI' if res_val==1 else 'XỈU'} | Tổng: {tong} | Xúc xắc: {dice_str}")
+                print(f"[♠️ SUNWIN] KQ Phiên {phien}: {'TÀI' if res_val==1 else 'XỈU'} | Tổng: {tong} | Xúc xắc: {dice_str}")
                 self.predict_next()
-                
-            except Exception as e:
+            except Exception:
                 pass
-                
             time.sleep(FETCH_INTERVAL)
 
+# ==========================================================
+# LUỒNG 2: AI HITCLUB MD5
+# ==========================================================
+class HitclubAI(BaseTaiXiuAI):
+    def __init__(self):
+        self.max_samples_tong = 5  
+        self.max_samples_dice = 8  
+        self.weight_tong = 0.45     
+        self.weight_dice = 0.55
+        self.history_file = "datahitclub.json"
+        
+        self.api_url = f"{NODEJS_SERVER}/api/hitclub/live"
+        self.sync_url = f"{NODEJS_SERVER}/api/hitclub/update-prediction"
+
+        self.raw_history = []
+        self.last_hash = None
+        self.last_prediction = None
+        self.predicted_phien = None
+        self.error_streak = 0
+        self.recent_15_results = [] 
+        self.dashboard_history = [] 
+        
+        self.load_memory()
+
+    def load_memory(self):
+        try:
+            if os.path.exists(self.history_file):
+                with open(self.history_file, 'r', encoding='utf-8') as f:
+                    self.raw_history = json.load(f)
+        except Exception:
+            pass
+
+    def save_history(self):
+        try:
+            if len(self.raw_history) > 2000:
+                self.raw_history = self.raw_history[-2000:]
+            with open(self.history_file, 'w', encoding='utf-8') as f:
+                json.dump(self.raw_history, f)
+        except Exception:
+            pass
+
     def predict_next(self):
-        if len(self.raw_history) < 3: 
-            print("⏳ Đang tích lũy thêm dữ liệu vào MongoDB để AI học...")
-            return
+        if len(self.raw_history) < 3: return
             
         last_round = self.raw_history[-1]
         target_tong = last_round['tong']
         target_dice = last_round['dice']
         
-        prob_tong_tai = self.get_prob_by_tong(self.raw_history, target_tong)
-        prob_dice_tai = self.get_prob_by_dice(self.raw_history, target_dice)
+        prob_tong_tai = self.get_prob_by_tong(self.raw_history, target_tong, self.max_samples_tong)
+        prob_dice_tai = self.get_prob_by_dice(self.raw_history, target_dice, self.max_samples_dice)
         
         v1 = self.raw_history[-3]['tong'] if len(self.raw_history) >= 3 else 10
         v2 = self.raw_history[-2]['tong'] if len(self.raw_history) >= 2 else 10
         v3 = self.raw_history[-1]['tong']
         confidence_rate = self.get_confidence_rate(v1, v2, v3)
         
-        final_prob_tai = (WEIGHT_TONG * prob_tong_tai) + (WEIGHT_DICE * prob_dice_tai)
+        final_prob_tai = (self.weight_tong * prob_tong_tai) + (self.weight_dice * prob_dice_tai)
         raw_pred = 1 if final_prob_tai >= 0.5 else 0
         
-        # LOGIC BẺ CẦU: Sai đúng 2 tay liên tiếp thì ép bẻ tay 3, từ tay 4 tắt bẻ quay về thuận logic
-        if self.error_streak == 2:
-            print("⚠️ KÍCH HOẠT BẺ CẦU TAY THỨ 3!")
+        # LOGIC BẺ CẦU HITCLUB
+        if self.error_streak >= 4:
+            print("[♦️ HITCLUB] ⚠️ ĐÃ SAI 4 TAY -> KÍCH HOẠT BẺ CẦU!")
             final_pred = 1 - raw_pred
-            detail_msg = f"Đọc Vị | ÉP BẺ CẦU (Gãy 2)"
+            self.error_streak = 0 
+            detail_msg = f"Đọc Vị | ÉP BẺ CẦU (Gãy 4)"
         else:
             final_pred = raw_pred
             detail_msg = f"Đọc Vị | T:{target_tong} B:{target_dice}"
-            if self.error_streak >= 3:
-                print(f"🔄 Chuỗi gãy đang là {self.error_streak} -> Đã tắt chế độ bẻ, đánh thuận logic.")
             
         self.last_prediction = final_pred
-        
-        try:
-            next_phien = int(self.raw_history[-1]['phien']) + 1
-        except:
-            next_phien = "Tiếp"
-
+        next_phien = int(self.raw_history[-1]['phien']) + 1 if str(self.raw_history[-1]['phien']).isdigit() else "Tiếp"
         self.predicted_phien = next_phien
         pred_str = "TÀI" if final_pred == 1 else "XỈU"
 
-        self.dashboard_history.append({
-            "phien": next_phien, "pred": pred_str, "actual": None, "win": None
-        })
-        if len(self.dashboard_history) > 20:
-            self.dashboard_history.pop(0)
+        self.dashboard_history.append({"phien": next_phien, "pred": pred_str, "actual": None, "win": None})
+        if len(self.dashboard_history) > 20: self.dashboard_history.pop(0)
 
-        self.sync_to_dashboard(pred_str, confidence_rate, detail_msg)
+        self.sync_to_dashboard(pred_str, confidence_rate, detail_msg, self.sync_url)
 
-        pt_tong_hien_thi = prob_tong_tai if prob_tong_tai > 0.5 else (1 - prob_tong_tai)
-        pt_dice_hien_thi = prob_dice_tai if prob_dice_tai > 0.5 else (1 - prob_dice_tai)
+    def run(self):
+        print("🔥 [HITCLUB] ĐANG CHẠY LUỒNG AI ĐỌC VỊ...")
+        while True:
+            try:
+                resp = requests.get(self.api_url, timeout=3)
+                if not resp.ok: 
+                    time.sleep(FETCH_INTERVAL)
+                    continue
+                    
+                latest = resp.json()
+                phien = latest.get('Phien')
+                res_val = self.normalize_result(latest.get('Ket_qua'))
+                x1, x2, x3 = latest.get('Xuc_xac_1'), latest.get('Xuc_xac_2'), latest.get('Xuc_xac_3')
+                
+                if phien == "Đang chờ..." or phien is None or res_val is None or x1 is None: 
+                    time.sleep(FETCH_INTERVAL)
+                    continue
+                
+                tong = int(x1) + int(x2) + int(x3)
+                dice_tuple = sorted([int(x1), int(x2), int(x3)])
+                dice_str = f"{dice_tuple[0]}-{dice_tuple[1]}-{dice_tuple[2]}"
+                
+                if str(phien) == str(self.last_hash):
+                    time.sleep(FETCH_INTERVAL)
+                    continue
+                    
+                self.last_hash = str(phien)
+                
+                if self.last_prediction is not None and self.predicted_phien == int(phien):
+                    won = (self.last_prediction == res_val)
+                    if not won:
+                        self.error_streak += 1
+                    else:
+                        self.error_streak = 0
+                        
+                    self.recent_15_results.append(won)
+                    if len(self.recent_15_results) > 15: self.recent_15_results.pop(0) 
+                    
+                    if len(self.dashboard_history) > 0 and self.dashboard_history[-1]['phien'] == self.predicted_phien:
+                        self.dashboard_history[-1]['actual'] = "TÀI" if res_val == 1 else "XỈU"
+                        self.dashboard_history[-1]['win'] = won
 
-        print(f"🔍 Dữ liệu mẫu (Ván trước: Tổng {target_tong}, Bộ {target_dice}):")
-        print(f"  > Mẫu Tổng thiên về: {'TÀI' if prob_tong_tai > 0.5 else 'XỈU'} ({pt_tong_hien_thi*100:.0f}%)")
-        print(f"  > Mẫu Bộ thiên về: {'TÀI' if prob_dice_tai > 0.5 else 'XỈU'} ({pt_dice_hien_thi*100:.0f}%)")
-        print(f"🎯 Phiên {next_phien} | Dự đoán: {pred_str} | Tỉ lệ toán học: {confidence_rate}%")
+                self.raw_history.append({'phien': phien, 'result': res_val, 'tong': tong, 'dice': dice_str})
+                self.save_history()
+                print(f"[♦️ HITCLUB] KQ Phiên {phien}: {'TÀI' if res_val==1 else 'XỈU'} | Tổng: {tong} | Xúc xắc: {dice_str}")
+                self.predict_next()
+            except Exception:
+                pass
+            time.sleep(FETCH_INTERVAL)
+
+# ==========================================================
+# KHỞI CHẠY ĐA LUỒNG (THREADING)
+# ==========================================================
+def run_sunwin_bot():
+    bot = SunwinAI()
+    bot.run()
+
+def run_hitclub_bot():
+    bot = HitclubAI()
+    bot.run()
 
 if __name__ == "__main__":
-    bot = TaiXiuAI()
-    bot.run()
+    t_sw = threading.Thread(target=run_sunwin_bot)
+    t_hc = threading.Thread(target=run_hitclub_bot)
+    
+    t_sw.start()
+    t_hc.start()
+    
+    t_sw.join()
+    t_hc.join()
