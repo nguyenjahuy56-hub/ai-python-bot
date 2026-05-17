@@ -7,21 +7,39 @@ import hashlib
 import threading
 from pymongo import MongoClient
 
-# ================= CẤU HÌNH THÔNG SỐ AI (ĐÃ TÁCH RIÊNG & THÊM TRỌNG SỐ THỜI GIAN) =================
+# ================= CẤU HÌNH THÔNG SỐ AI ĐA LOGIC =================
 
 # ♠️ THÔNG SỐ AI CHO SUNWIN
-SUNWIN_MAX_SAMPLES_TONG = 5 # Số lần quét lại lịch sử cho TỔNG 
-SUNWIN_MAX_SAMPLES_DICE = 4   # Số lần quét lại lịch sử cho BỘ XÚC XẮC 
-SUNWIN_WEIGHT_TONG = 0.70      # Trọng số của Tổng so với Xúc Xắc (45%)
-SUNWIN_WEIGHT_DICE = 0.30      # Trọng số của Xúc Xắc so với Tổng (55%)
-SUNWIN_SAMPLE_DECAY = 1    # Độ suy giảm trọng số mẫu cũ (1.0 là ko giảm. 0.85 là tối ưu nhất: 100% -> 85% -> 72%...)
+# --- LOGIC 1: ĐỌC VỊ BÌNH THƯỜNG (Cầu lộn xộn) ---
+SUNWIN_L1_MAX_SAMPLES_TONG = 5 
+SUNWIN_L1_MAX_SAMPLES_DICE = 6   
+SUNWIN_L1_WEIGHT_TONG = 0.40      
+SUNWIN_L1_WEIGHT_DICE = 0.60      
+SUNWIN_L1_DECAY = 1.0    
+
+# --- LOGIC 2: ĐỌC VỊ KHI VÀO FORM BỆT (3 tay TTT hoặc XXX) ---
+SUNWIN_L2_MAX_SAMPLES_TONG = 7  
+SUNWIN_L2_MAX_SAMPLES_DICE = 13
+SUNWIN_L2_WEIGHT_TONG = 0.30
+SUNWIN_L2_WEIGHT_DICE = 0.70
+SUNWIN_L2_DECAY = 0.50
+
 
 # ♦️ THÔNG SỐ AI CHO HITCLUB MD5
-HITCLUB_MAX_SAMPLES_TONG = 15    
-HITCLUB_MAX_SAMPLES_DICE = 18
-HITCLUB_WEIGHT_TONG = 0.30      
-HITCLUB_WEIGHT_DICE = 0.70      
-HITCLUB_SAMPLE_DECAY = 0.85  
+# --- LOGIC 1: ĐỌC VỊ BÌNH THƯỜNG (Cầu lộn xộn) ---
+HITCLUB_L1_MAX_SAMPLES_TONG = 15    
+HITCLUB_L1_MAX_SAMPLES_DICE = 18
+HITCLUB_L1_WEIGHT_TONG = 0.30      
+HITCLUB_L1_WEIGHT_DICE = 0.70      
+HITCLUB_L1_DECAY = 0.85  
+
+# --- LOGIC 2: ĐỌC VỊ KHI VÀO FORM BỆT (3 tay TTT hoặc XXX) ---
+HITCLUB_L2_MAX_SAMPLES_TONG = 20    
+HITCLUB_L2_MAX_SAMPLES_DICE = 25
+HITCLUB_L2_WEIGHT_TONG = 0.40
+HITCLUB_L2_WEIGHT_DICE = 0.60
+HITCLUB_L2_DECAY = 0.90
+
 
 # 🌐 CẤU HÌNH SERVER NODEJS & DATABASE LOCAL
 NODEJS_SERVER = "https://apisun-production-8d96.up.railway.app"
@@ -66,7 +84,6 @@ class BaseTaiXiuAI:
         if s in ['XIU', 'X', '0', 'FALSE']: return 0
         return None
 
-    # Logic mới: Tính xác suất dựa trên tổng Trọng số các mẫu (Mẫu gần = điểm cao, mẫu xa = điểm thấp)
     def get_prob_by_tong(self, history, target_tong, max_samples, decay_rate):
         tai_weight = 0.0
         total_weight = 0.0
@@ -74,7 +91,7 @@ class BaseTaiXiuAI:
         
         for i in range(len(history) - 2, -1, -1):
             if history[i]['tong'] == target_tong:
-                current_weight = decay_rate ** matched_count  # Mẫu đầu: decay^0 = 1, Mẫu hai: decay^1 ...
+                current_weight = decay_rate ** matched_count
                 total_weight += current_weight
                 
                 if history[i + 1]['result'] == 1: 
@@ -86,7 +103,6 @@ class BaseTaiXiuAI:
         if total_weight == 0: return 0.5 
         return tai_weight / total_weight
 
-    # Tương tự cho Xúc Xắc
     def get_prob_by_dice(self, history, target_dice_str, max_samples, decay_rate):
         tai_weight = 0.0
         total_weight = 0.0
@@ -140,11 +156,19 @@ class BaseTaiXiuAI:
 # ==========================================================
 class SunwinAI(BaseTaiXiuAI):
     def __init__(self):
-        self.max_samples_tong = SUNWIN_MAX_SAMPLES_TONG  
-        self.max_samples_dice = SUNWIN_MAX_SAMPLES_DICE  
-        self.weight_tong = SUNWIN_WEIGHT_TONG     
-        self.weight_dice = SUNWIN_WEIGHT_DICE
-        self.sample_decay = SUNWIN_SAMPLE_DECAY
+        # Thông số Logic 1 (Bình thường)
+        self.l1_max_samples_tong = SUNWIN_L1_MAX_SAMPLES_TONG  
+        self.l1_max_samples_dice = SUNWIN_L1_MAX_SAMPLES_DICE  
+        self.l1_weight_tong = SUNWIN_L1_WEIGHT_TONG     
+        self.l1_weight_dice = SUNWIN_L1_WEIGHT_DICE
+        self.l1_decay = SUNWIN_L1_DECAY
+        
+        # Thông số Logic 2 (Bệt TTT hoặc XXX)
+        self.l2_max_samples_tong = SUNWIN_L2_MAX_SAMPLES_TONG  
+        self.l2_max_samples_dice = SUNWIN_L2_MAX_SAMPLES_DICE  
+        self.l2_weight_tong = SUNWIN_L2_WEIGHT_TONG     
+        self.l2_weight_dice = SUNWIN_L2_WEIGHT_DICE
+        self.l2_decay = SUNWIN_L2_DECAY
         
         self.api_url = f"{NODEJS_SERVER}/api/sunwin/live"
         self.sync_url = f"{NODEJS_SERVER}/api/sunwin/update-prediction"
@@ -188,26 +212,39 @@ class SunwinAI(BaseTaiXiuAI):
         target_tong = last_round['tong']
         target_dice = last_round['dice']
         
-        prob_tong_tai = self.get_prob_by_tong(self.raw_history, target_tong, self.max_samples_tong, self.sample_decay)
-        prob_dice_tai = self.get_prob_by_dice(self.raw_history, target_dice, self.max_samples_dice, self.sample_decay)
+        # LOGIC CHUYỂN ĐỔI: Kiểm tra 3 ván gần nhất xem có phải TTT hoặc XXX không
+        last_3_results = [r['result'] for r in self.raw_history[-3:]]
+        is_bet = (last_3_results[0] == last_3_results[1] == last_3_results[2])
+        
+        if is_bet:
+            # ---> KÍCH HOẠT LOGIC 2 (BỆT)
+            logic_mode = "L2(Bệt)"
+            prob_tong = self.get_prob_by_tong(self.raw_history, target_tong, self.l2_max_samples_tong, self.l2_decay)
+            prob_dice = self.get_prob_by_dice(self.raw_history, target_dice, self.l2_max_samples_dice, self.l2_decay)
+            final_prob_tai = (self.l2_weight_tong * prob_tong) + (self.l2_weight_dice * prob_dice)
+        else:
+            # ---> KÍCH HOẠT LOGIC 1 (BÌNH THƯỜNG)
+            logic_mode = "L1(Thường)"
+            prob_tong = self.get_prob_by_tong(self.raw_history, target_tong, self.l1_max_samples_tong, self.l1_decay)
+            prob_dice = self.get_prob_by_dice(self.raw_history, target_dice, self.l1_max_samples_dice, self.l1_decay)
+            final_prob_tai = (self.l1_weight_tong * prob_tong) + (self.l1_weight_dice * prob_dice)
+            
+        raw_pred = 1 if final_prob_tai >= 0.5 else 0
         
         v1 = self.raw_history[-3]['tong'] if len(self.raw_history) >= 3 else 10
         v2 = self.raw_history[-2]['tong'] if len(self.raw_history) >= 2 else 10
         v3 = self.raw_history[-1]['tong']
         confidence_rate = self.get_confidence_rate(v1, v2, v3)
         
-        final_prob_tai = (self.weight_tong * prob_tong_tai) + (self.weight_dice * prob_dice_tai)
-        raw_pred = 1 if final_prob_tai >= 0.5 else 0
-        
-        # LOGIC BẺ CẦU MỚI: Chỉ kích hoạt bẻ cầu khi gãy đúng 2 tay liên tiếp
-        if self.error_streak == 2:
-            print("[♠️ SUNWIN] ⚠️ GÃY 2 TAY -> KÍCH HOẠT BẺ CẦU TAY THỨ 3!")
+        # LOGIC BẺ CẦU MỚI: Chỉ kích hoạt bẻ cầu khi gãy đúng 4 tay liên tiếp
+        if self.error_streak == 4:
+            print("[♠️ SUNWIN] ⚠️ GÃY 4 TAY -> KÍCH HOẠT BẺ CẦU TAY THỨ 5!")
             final_pred = 1 - raw_pred
-            detail_msg = f"Đọc Vị | ÉP BẺ CẦU (Gãy 2)"
+            detail_msg = f"{logic_mode} | ÉP BẺ CẦU (Gãy 4)"
         else:
             final_pred = raw_pred
-            detail_msg = f"Đọc Vị | T:{target_tong} B:{target_dice}"
-            if self.error_streak >= 3:
+            detail_msg = f"{logic_mode} | T:{target_tong} B:{target_dice}"
+            if self.error_streak >= 5:
                 print(f"[♠️ SUNWIN] 🔄 Chuỗi gãy đang là {self.error_streak} -> Đã tắt bẻ cầu, trở về bình thường.")
             
         self.last_prediction = final_pred
@@ -221,7 +258,7 @@ class SunwinAI(BaseTaiXiuAI):
         self.sync_to_dashboard(pred_str, confidence_rate, detail_msg, self.sync_url)
 
     def run(self):
-        print("🔥 [SUNWIN] ĐANG CHẠY LUỒNG AI ĐỌC VỊ...")
+        print("🔥 [SUNWIN] ĐANG CHẠY LUỒNG AI (L1 THƯỜNG / L2 BỆT)...")
         while True:
             try:
                 resp = requests.get(self.api_url, timeout=3)
@@ -273,13 +310,21 @@ class SunwinAI(BaseTaiXiuAI):
 # ==========================================================
 class HitclubAI(BaseTaiXiuAI):
     def __init__(self):
-        self.max_samples_tong = HITCLUB_MAX_SAMPLES_TONG  
-        self.max_samples_dice = HITCLUB_MAX_SAMPLES_DICE  
-        self.weight_tong = HITCLUB_WEIGHT_TONG     
-        self.weight_dice = HITCLUB_WEIGHT_DICE
-        self.sample_decay = HITCLUB_SAMPLE_DECAY
-        self.history_file = HITCLUB_HISTORY_FILE
+        # Thông số Logic 1 (Bình thường)
+        self.l1_max_samples_tong = HITCLUB_L1_MAX_SAMPLES_TONG  
+        self.l1_max_samples_dice = HITCLUB_L1_MAX_SAMPLES_DICE  
+        self.l1_weight_tong = HITCLUB_L1_WEIGHT_TONG     
+        self.l1_weight_dice = HITCLUB_L1_WEIGHT_DICE
+        self.l1_decay = HITCLUB_L1_DECAY
         
+        # Thông số Logic 2 (Bệt TTT hoặc XXX)
+        self.l2_max_samples_tong = HITCLUB_L2_MAX_SAMPLES_TONG  
+        self.l2_max_samples_dice = HITCLUB_L2_MAX_SAMPLES_DICE  
+        self.l2_weight_tong = HITCLUB_L2_WEIGHT_TONG     
+        self.l2_weight_dice = HITCLUB_L2_WEIGHT_DICE
+        self.l2_decay = HITCLUB_L2_DECAY
+        
+        self.history_file = HITCLUB_HISTORY_FILE
         self.api_url = f"{NODEJS_SERVER}/api/hitclub/live"
         self.sync_url = f"{NODEJS_SERVER}/api/hitclub/update-prediction"
 
@@ -317,26 +362,39 @@ class HitclubAI(BaseTaiXiuAI):
         target_tong = last_round['tong']
         target_dice = last_round['dice']
         
-        prob_tong_tai = self.get_prob_by_tong(self.raw_history, target_tong, self.max_samples_tong, self.sample_decay)
-        prob_dice_tai = self.get_prob_by_dice(self.raw_history, target_dice, self.max_samples_dice, self.sample_decay)
+        # LOGIC CHUYỂN ĐỔI: Kiểm tra 3 ván gần nhất xem có phải TTT hoặc XXX không
+        last_3_results = [r['result'] for r in self.raw_history[-3:]]
+        is_bet = (last_3_results[0] == last_3_results[1] == last_3_results[2])
+        
+        if is_bet:
+            # ---> KÍCH HOẠT LOGIC 2 (BỆT)
+            logic_mode = "L2(Bệt)"
+            prob_tong = self.get_prob_by_tong(self.raw_history, target_tong, self.l2_max_samples_tong, self.l2_decay)
+            prob_dice = self.get_prob_by_dice(self.raw_history, target_dice, self.l2_max_samples_dice, self.l2_decay)
+            final_prob_tai = (self.l2_weight_tong * prob_tong) + (self.l2_weight_dice * prob_dice)
+        else:
+            # ---> KÍCH HOẠT LOGIC 1 (BÌNH THƯỜNG)
+            logic_mode = "L1(Thường)"
+            prob_tong = self.get_prob_by_tong(self.raw_history, target_tong, self.l1_max_samples_tong, self.l1_decay)
+            prob_dice = self.get_prob_by_dice(self.raw_history, target_dice, self.l1_max_samples_dice, self.l1_decay)
+            final_prob_tai = (self.l1_weight_tong * prob_tong) + (self.l1_weight_dice * prob_dice)
+            
+        raw_pred = 1 if final_prob_tai >= 0.5 else 0
         
         v1 = self.raw_history[-3]['tong'] if len(self.raw_history) >= 3 else 10
         v2 = self.raw_history[-2]['tong'] if len(self.raw_history) >= 2 else 10
         v3 = self.raw_history[-1]['tong']
         confidence_rate = self.get_confidence_rate(v1, v2, v3)
         
-        final_prob_tai = (self.weight_tong * prob_tong_tai) + (self.weight_dice * prob_dice_tai)
-        raw_pred = 1 if final_prob_tai >= 0.5 else 0
-        
-        # LOGIC BẺ CẦU MỚI: Chỉ kích hoạt bẻ cầu khi gãy đúng 2 tay liên tiếp
-        if self.error_streak == 2:
-            print("[♦️ HITCLUB] ⚠️ GÃY 2 TAY -> KÍCH HOẠT BẺ CẦU TAY THỨ 3!")
+        # LOGIC BẺ CẦU MỚI: Chỉ kích hoạt bẻ cầu khi gãy đúng 4 tay liên tiếp
+        if self.error_streak == 4:
+            print("[♦️ HITCLUB] ⚠️ GÃY 4 TAY -> KÍCH HOẠT BẺ CẦU TAY THỨ 5!")
             final_pred = 1 - raw_pred
-            detail_msg = f"Đọc Vị | ÉP BẺ CẦU (Gãy 2)"
+            detail_msg = f"{logic_mode} | ÉP BẺ CẦU (Gãy 4)"
         else:
             final_pred = raw_pred
-            detail_msg = f"Đọc Vị | T:{target_tong} B:{target_dice}"
-            if self.error_streak >= 3:
+            detail_msg = f"{logic_mode} | T:{target_tong} B:{target_dice}"
+            if self.error_streak >= 5:
                 print(f"[♦️ HITCLUB] 🔄 Chuỗi gãy đang là {self.error_streak} -> Đã tắt bẻ cầu, trở về bình thường.")
             
         self.last_prediction = final_pred
@@ -350,7 +408,7 @@ class HitclubAI(BaseTaiXiuAI):
         self.sync_to_dashboard(pred_str, confidence_rate, detail_msg, self.sync_url)
 
     def run(self):
-        print("🔥 [HITCLUB] ĐANG CHẠY LUỒNG AI ĐỌC VỊ...")
+        print("🔥 [HITCLUB] ĐANG CHẠY LUỒNG AI (L1 THƯỜNG / L2 BỆT)...")
         while True:
             try:
                 resp = requests.get(self.api_url, timeout=3)
