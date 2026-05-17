@@ -213,8 +213,16 @@ class SunwinAI(BaseTaiXiuAI):
         self.predicted_phien = next_phien
         pred_str = "TÀI" if final_pred == 1 else "XỈU"
 
-        # IN LOG DỰ ĐOÁN RA RAILWAY 
-        print(f"🎯 [♠️ SUNWIN] DỰ ĐOÁN PHIÊN {next_phien} => {pred_str} | Tỉ lệ: {confidence_rate}% | Chuỗi gãy: {self.error_streak}", flush=True)
+        # CHUẨN BỊ LOG CHI TIẾT
+        tong_pred_str = "TÀI" if prob_tong_tai >= 0.5 else "XỈU"
+        dice_pred_str = "TÀI" if prob_dice_tai >= 0.5 else "XỈU"
+
+        # IN LOG DỰ ĐOÁN RA RAILWAY CHI TIẾT
+        print(f"🎯 [♠️ SUNWIN] DỰ ĐOÁN PHIÊN {next_phien} => CHỐT: {pred_str}", flush=True)
+        print(f"   ├─ Phân tích Tổng     : {tong_pred_str} (Tỉ lệ Tài: {round(prob_tong_tai * 100, 1)}%)", flush=True)
+        print(f"   ├─ Phân tích Xúc xắc  : {dice_pred_str} (Tỉ lệ Tài: {round(prob_dice_tai * 100, 1)}%)", flush=True)
+        print(f"   ├─ 📊 Độ tin cậy (Dash): {confidence_rate}%", flush=True)
+        print(f"   └─ ⚠️ Chuỗi gãy hiện tại: {self.error_streak}", flush=True)
         print("-" * 50, flush=True)
 
         self.dashboard_history.append({"phien": next_phien, "pred": pred_str, "actual": None, "win": None})
@@ -346,8 +354,16 @@ class HitclubAI(BaseTaiXiuAI):
         self.predicted_phien = next_phien
         pred_str = "TÀI" if final_pred == 1 else "XỈU"
 
-        # IN LOG DỰ ĐOÁN RA RAILWAY 
-        print(f"🎯 [♦️ HITCLUB] DỰ ĐOÁN PHIÊN {next_phien} => {pred_str} | Tỉ lệ: {confidence_rate}% | Chuỗi gãy: {self.error_streak}", flush=True)
+        # CHUẨN BỊ LOG CHI TIẾT
+        tong_pred_str = "TÀI" if prob_tong_tai >= 0.5 else "XỈU"
+        dice_pred_str = "TÀI" if prob_dice_tai >= 0.5 else "XỈU"
+
+        # IN LOG DỰ ĐOÁN RA RAILWAY CHI TIẾT
+        print(f"🎯 [♦️ HITCLUB] DỰ ĐOÁN PHIÊN {next_phien} => CHỐT: {pred_str}", flush=True)
+        print(f"   ├─ Phân tích Tổng     : {tong_pred_str} (Tỉ lệ Tài: {round(prob_tong_tai * 100, 1)}%)", flush=True)
+        print(f"   ├─ Phân tích Xúc xắc  : {dice_pred_str} (Tỉ lệ Tài: {round(prob_dice_tai * 100, 1)}%)", flush=True)
+        print(f"   ├─ 📊 Độ tin cậy (Dash): {confidence_rate}%", flush=True)
+        print(f"   └─ ⚠️ Chuỗi gãy hiện tại: {self.error_streak}", flush=True)
         print("-" * 50, flush=True)
 
         self.dashboard_history.append({"phien": next_phien, "pred": pred_str, "actual": None, "win": None})
