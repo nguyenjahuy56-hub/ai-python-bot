@@ -7,8 +7,8 @@ import hashlib
 from pymongo import MongoClient
 
 # ================= CẤU HÌNH THÔNG SỐ AI =================
-MAX_SAMPLES_TONG = 5  
-MAX_SAMPLES_DICE = 4  
+MAX_SAMPLES_TONG = 8  
+MAX_SAMPLES_DICE = 10  
 WEIGHT_TONG = 0.45     
 WEIGHT_DICE = 0.55     
 # ========================================================
