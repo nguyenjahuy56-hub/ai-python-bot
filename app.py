@@ -24,7 +24,7 @@ HITCLUB_WEIGHT_DICE = 0.55
 HITCLUB_SAMPLE_DECAY = 0.85     
 
 # 🌐 CẤU HÌNH SERVER NODEJS & DATABASE LOCAL
-NODEJS_SERVER = "https://apisun-production-8d96.up.railway.app" 
+NODEJS_SERVER = "http://localhost:3001" 
 FETCH_INTERVAL = 1.2
 HITCLUB_HISTORY_FILE = "datahitclubmd5.json"
 
@@ -199,15 +199,16 @@ class SunwinAI(BaseTaiXiuAI):
         final_prob_tai = (self.weight_tong * prob_tong_tai) + (self.weight_dice * prob_dice_tai)
         raw_pred = 1 if final_prob_tai >= 0.5 else 0
         
-        if self.error_streak == 4:
-            print("[♠️ SUNWIN] ⚠️ KÍCH HOẠT BẺ CẦU TAY THỨ 5!")
+        # LOGIC BẺ CẦU MỚI: Chỉ ép bẻ cầu khi gãy đúng 1 tay
+        if self.error_streak == 1:
+            print("[♠️ SUNWIN] ⚠️ GÃY 1 TAY -> KÍCH HOẠT BẺ CẦU!")
             final_pred = 1 - raw_pred
-            detail_msg = f"Đọc Vị | ÉP BẺ CẦU (Gãy 4)"
+            detail_msg = f"Đọc Vị | ÉP BẺ CẦU (Gãy 1)"
         else:
             final_pred = raw_pred
             detail_msg = f"Đọc Vị | T:{target_tong} B:{target_dice}"
-            if self.error_streak >= 5:
-                print(f"[♠️ SUNWIN] 🔄 Chuỗi gãy đang là {self.error_streak} -> Đã tắt bẻ cầu.")
+            if self.error_streak >= 2:
+                print(f"[♠️ SUNWIN] 🔄 Chuỗi gãy đang là {self.error_streak} -> Đã tắt bẻ cầu, trở về bình thường.")
             
         self.last_prediction = final_pred
         next_phien = int(self.raw_history[-1]['phien']) + 1 if str(self.raw_history[-1]['phien']).isdigit() else "Tiếp"
@@ -327,14 +328,17 @@ class HitclubAI(BaseTaiXiuAI):
         final_prob_tai = (self.weight_tong * prob_tong_tai) + (self.weight_dice * prob_dice_tai)
         raw_pred = 1 if final_prob_tai >= 0.5 else 0
         
-        if self.error_streak >= 4:
-            print("[♦️ HITCLUB] ⚠️ ĐÃ SAI 4 TAY -> KÍCH HOẠT BẺ CẦU!")
+        # LOGIC BẺ CẦU MỚI: Chỉ ép bẻ cầu khi gãy đúng 1 tay
+        if self.error_streak == 1:
+            print("[♦️ HITCLUB] ⚠️ GÃY 1 TAY -> KÍCH HOẠT BẺ CẦU!")
             final_pred = 1 - raw_pred
-            self.error_streak = 0 
-            detail_msg = f"Đọc Vị | ÉP BẺ CẦU (Gãy 4)"
+            # Đã bỏ self.error_streak = 0 đi để nó đếm được lỗi tiếp theo
+            detail_msg = f"Đọc Vị | ÉP BẺ CẦU (Gãy 1)"
         else:
             final_pred = raw_pred
             detail_msg = f"Đọc Vị | T:{target_tong} B:{target_dice}"
+            if self.error_streak >= 2:
+                print(f"[♦️ HITCLUB] 🔄 Chuỗi gãy đang là {self.error_streak} -> Đã tắt bẻ cầu, trở về bình thường.")
             
         self.last_prediction = final_pred
         next_phien = int(self.raw_history[-1]['phien']) + 1 if str(self.raw_history[-1]['phien']).isdigit() else "Tiếp"
