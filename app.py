@@ -11,17 +11,17 @@ from pymongo import MongoClient
 
 # ♠️ THÔNG SỐ AI CHO SUNWIN
 SUNWIN_MAX_SAMPLES_TONG = 8     # Số lần quét lại lịch sử cho TỔNG 
-SUNWIN_MAX_SAMPLES_DICE = 10    # Số lần quét lại lịch sử cho BỘ XÚC XẮC 
-SUNWIN_WEIGHT_TONG = 0.45       # Trọng số của Tổng so với Xúc Xắc (45%)
-SUNWIN_WEIGHT_DICE = 0.55       # Trọng số của Xúc Xắc so với Tổng (55%)
-SUNWIN_SAMPLE_DECAY = 0.85      # Độ suy giảm trọng số mẫu cũ (1.0 là ko giảm. 0.85 là tối ưu nhất: 100% -> 85% -> 72%...)
+SUNWIN_MAX_SAMPLES_DICE = 13    # Số lần quét lại lịch sử cho BỘ XÚC XẮC 
+SUNWIN_WEIGHT_TONG = 0.60       # Trọng số của Tổng so với Xúc Xắc (45%)
+SUNWIN_WEIGHT_DICE = 0.40       # Trọng số của Xúc Xắc so với Tổng (55%)
+SUNWIN_SAMPLE_DECAY = 0.65      # Độ suy giảm trọng số mẫu cũ (1.0 là ko giảm. 0.85 là tối ưu nhất: 100% -> 85% -> 72%...)
 
 # ♦️ THÔNG SỐ AI CHO HITCLUB MD5
-HITCLUB_MAX_SAMPLES_TONG = 5    
-HITCLUB_MAX_SAMPLES_DICE = 8    
+HITCLUB_MAX_SAMPLES_TONG = 8    
+HITCLUB_MAX_SAMPLES_DICE = 13    
 HITCLUB_WEIGHT_TONG = 0.45      
 HITCLUB_WEIGHT_DICE = 0.55      
-HITCLUB_SAMPLE_DECAY = 0.85     
+HITCLUB_SAMPLE_DECAY = 0.65     
 
 # 🌐 CẤU HÌNH SERVER NODEJS & DATABASE LOCAL
 NODEJS_SERVER = "https://apisun-production-8d96.up.railway.app"
@@ -199,15 +199,15 @@ class SunwinAI(BaseTaiXiuAI):
         final_prob_tai = (self.weight_tong * prob_tong_tai) + (self.weight_dice * prob_dice_tai)
         raw_pred = 1 if final_prob_tai >= 0.5 else 0
         
-        # LOGIC BẺ CẦU MỚI: Chỉ ép bẻ cầu khi gãy đúng 1 tay
-        if self.error_streak == 1:
-            print("[♠️ SUNWIN] ⚠️ GÃY 1 TAY -> KÍCH HOẠT BẺ CẦU!")
+        # LOGIC BẺ CẦU MỚI: Chỉ kích hoạt bẻ cầu khi gãy đúng 2 tay liên tiếp
+        if self.error_streak == 2:
+            print("[♠️ SUNWIN] ⚠️ GÃY 2 TAY -> KÍCH HOẠT BẺ CẦU TAY THỨ 3!")
             final_pred = 1 - raw_pred
-            detail_msg = f"Đọc Vị | ÉP BẺ CẦU (Gãy 1)"
+            detail_msg = f"Đọc Vị | ÉP BẺ CẦU (Gãy 2)"
         else:
             final_pred = raw_pred
             detail_msg = f"Đọc Vị | T:{target_tong} B:{target_dice}"
-            if self.error_streak >= 2:
+            if self.error_streak >= 3:
                 print(f"[♠️ SUNWIN] 🔄 Chuỗi gãy đang là {self.error_streak} -> Đã tắt bẻ cầu, trở về bình thường.")
             
         self.last_prediction = final_pred
@@ -328,16 +328,15 @@ class HitclubAI(BaseTaiXiuAI):
         final_prob_tai = (self.weight_tong * prob_tong_tai) + (self.weight_dice * prob_dice_tai)
         raw_pred = 1 if final_prob_tai >= 0.5 else 0
         
-        # LOGIC BẺ CẦU MỚI: Chỉ ép bẻ cầu khi gãy đúng 1 tay
-        if self.error_streak == 1:
-            print("[♦️ HITCLUB] ⚠️ GÃY 1 TAY -> KÍCH HOẠT BẺ CẦU!")
+        # LOGIC BẺ CẦU MỚI: Chỉ kích hoạt bẻ cầu khi gãy đúng 2 tay liên tiếp
+        if self.error_streak == 2:
+            print("[♦️ HITCLUB] ⚠️ GÃY 2 TAY -> KÍCH HOẠT BẺ CẦU TAY THỨ 3!")
             final_pred = 1 - raw_pred
-            # Đã bỏ self.error_streak = 0 đi để nó đếm được lỗi tiếp theo
-            detail_msg = f"Đọc Vị | ÉP BẺ CẦU (Gãy 1)"
+            detail_msg = f"Đọc Vị | ÉP BẺ CẦU (Gãy 2)"
         else:
             final_pred = raw_pred
             detail_msg = f"Đọc Vị | T:{target_tong} B:{target_dice}"
-            if self.error_streak >= 2:
+            if self.error_streak >= 3:
                 print(f"[♦️ HITCLUB] 🔄 Chuỗi gãy đang là {self.error_streak} -> Đã tắt bẻ cầu, trở về bình thường.")
             
         self.last_prediction = final_pred
