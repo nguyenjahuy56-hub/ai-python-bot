@@ -7,13 +7,30 @@ import hashlib
 import threading
 from pymongo import MongoClient
 
-# ================= CẤU HÌNH SERVER NODEJS =================
-# Đổi thành domain Railway của Nodejs nếu m deploy lên cloud
+# ================= CẤU HÌNH THÔNG SỐ AI (ĐÃ TÁCH RIÊNG & THÊM TRỌNG SỐ THỜI GIAN) =================
+
+# ♠️ THÔNG SỐ AI CHO SUNWIN
+SUNWIN_MAX_SAMPLES_TONG = 8     # Số lần quét lại lịch sử cho TỔNG 
+SUNWIN_MAX_SAMPLES_DICE = 10    # Số lần quét lại lịch sử cho BỘ XÚC XẮC 
+SUNWIN_WEIGHT_TONG = 0.45       # Trọng số của Tổng so với Xúc Xắc (45%)
+SUNWIN_WEIGHT_DICE = 0.55       # Trọng số của Xúc Xắc so với Tổng (55%)
+SUNWIN_SAMPLE_DECAY = 0.85      # Độ suy giảm trọng số mẫu cũ (1.0 là ko giảm. 0.85 là tối ưu nhất: 100% -> 85% -> 72%...)
+
+# ♦️ THÔNG SỐ AI CHO HITCLUB MD5
+HITCLUB_MAX_SAMPLES_TONG = 5    
+HITCLUB_MAX_SAMPLES_DICE = 8    
+HITCLUB_WEIGHT_TONG = 0.45      
+HITCLUB_WEIGHT_DICE = 0.55      
+HITCLUB_SAMPLE_DECAY = 0.85     
+
+# 🌐 CẤU HÌNH SERVER NODEJS & DATABASE LOCAL
 NODEJS_SERVER = "http://localhost:3001" 
 FETCH_INTERVAL = 1.2
-# ==========================================================
+HITCLUB_HISTORY_FILE = "datahitclubmd5.json"
 
-# CẤU HÌNH KẾT NỐI MONGODB (Cho Sunwin)
+# ========================================================================
+
+# CẤU HÌNH KẾT NỐI MONGODB (Cho Sunwin - Giữ nguyên kết nối Cloud)
 MONGO_URI = "mongodb+srv://huylog333_db_user:engL1VIN3XA7egZY@cluster0.2myhlng.mongodb.net/?appName=Cluster0"
 try:
     mongo_client = MongoClient(MONGO_URI, serverSelectionTimeoutMS=8000, connectTimeoutMS=8000)
@@ -26,7 +43,7 @@ except Exception as e:
     sunwin_collection = None
 
 # ==========================================================
-# LỚP AI ĐỌC VỊ CHUNG (Các hàm dùng chung)
+# LỚP AI ĐỌC VỊ CHUNG (Tích hợp logic Time Decay Weight)
 # ==========================================================
 class BaseTaiXiuAI:
     def extract_data_list(self, json_data):
@@ -49,27 +66,45 @@ class BaseTaiXiuAI:
         if s in ['XIU', 'X', '0', 'FALSE']: return 0
         return None
 
-    def get_prob_by_tong(self, history, target_tong, max_samples):
-        tai_count = 0
-        total_matched = 0
+    # Logic mới: Tính xác suất dựa trên tổng Trọng số các mẫu (Mẫu gần = điểm cao, mẫu xa = điểm thấp)
+    def get_prob_by_tong(self, history, target_tong, max_samples, decay_rate):
+        tai_weight = 0.0
+        total_weight = 0.0
+        matched_count = 0
+        
         for i in range(len(history) - 2, -1, -1):
             if history[i]['tong'] == target_tong:
-                total_matched += 1
-                if history[i + 1]['result'] == 1: tai_count += 1
-                if total_matched >= max_samples: break
-        if total_matched == 0: return 0.5 
-        return tai_count / total_matched
+                current_weight = decay_rate ** matched_count  # Mẫu đầu: decay^0 = 1, Mẫu hai: decay^1 ...
+                total_weight += current_weight
+                
+                if history[i + 1]['result'] == 1: 
+                    tai_weight += current_weight
+                    
+                matched_count += 1
+                if matched_count >= max_samples: break
+                
+        if total_weight == 0: return 0.5 
+        return tai_weight / total_weight
 
-    def get_prob_by_dice(self, history, target_dice_str, max_samples):
-        tai_count = 0
-        total_matched = 0
+    # Tương tự cho Xúc Xắc
+    def get_prob_by_dice(self, history, target_dice_str, max_samples, decay_rate):
+        tai_weight = 0.0
+        total_weight = 0.0
+        matched_count = 0
+        
         for i in range(len(history) - 2, -1, -1):
             if history[i]['dice'] == target_dice_str:
-                total_matched += 1
-                if history[i + 1]['result'] == 1: tai_count += 1
-                if total_matched >= max_samples: break
-        if total_matched == 0: return 0.5 
-        return tai_count / total_matched
+                current_weight = decay_rate ** matched_count
+                total_weight += current_weight
+                
+                if history[i + 1]['result'] == 1: 
+                    tai_weight += current_weight
+                    
+                matched_count += 1
+                if matched_count >= max_samples: break
+                
+        if total_weight == 0: return 0.5 
+        return tai_weight / total_weight
 
     def get_confidence_rate(self, v1, v2, v3):
         raw_string = f"{v1}-{v2}-{v3}"
@@ -101,14 +136,15 @@ class BaseTaiXiuAI:
             pass
 
 # ==========================================================
-# LUỒNG 1: AI SUNWIN
+# LUỒNG 1: AI SUNWIN 
 # ==========================================================
 class SunwinAI(BaseTaiXiuAI):
     def __init__(self):
-        self.max_samples_tong = 13  
-        self.max_samples_dice = 8  
-        self.weight_tong = 0.45     
-        self.weight_dice = 0.55
+        self.max_samples_tong = SUNWIN_MAX_SAMPLES_TONG  
+        self.max_samples_dice = SUNWIN_MAX_SAMPLES_DICE  
+        self.weight_tong = SUNWIN_WEIGHT_TONG     
+        self.weight_dice = SUNWIN_WEIGHT_DICE
+        self.sample_decay = SUNWIN_SAMPLE_DECAY
         
         self.api_url = f"{NODEJS_SERVER}/api/sunwin/live"
         self.sync_url = f"{NODEJS_SERVER}/api/sunwin/update-prediction"
@@ -124,14 +160,11 @@ class SunwinAI(BaseTaiXiuAI):
         self.load_memory()
 
     def load_memory(self):
-        if sunwin_collection is None:
-            return
+        if sunwin_collection is None: return
         try:
             doc = sunwin_collection.find_one({'config': 'history_array'})
             if doc and 'data' in doc:
                 self.raw_history = doc['data']
-            else:
-                self.raw_history = []
         except Exception:
             self.raw_history = []
 
@@ -155,8 +188,8 @@ class SunwinAI(BaseTaiXiuAI):
         target_tong = last_round['tong']
         target_dice = last_round['dice']
         
-        prob_tong_tai = self.get_prob_by_tong(self.raw_history, target_tong, self.max_samples_tong)
-        prob_dice_tai = self.get_prob_by_dice(self.raw_history, target_dice, self.max_samples_dice)
+        prob_tong_tai = self.get_prob_by_tong(self.raw_history, target_tong, self.max_samples_tong, self.sample_decay)
+        prob_dice_tai = self.get_prob_by_dice(self.raw_history, target_dice, self.max_samples_dice, self.sample_decay)
         
         v1 = self.raw_history[-3]['tong'] if len(self.raw_history) >= 3 else 10
         v2 = self.raw_history[-2]['tong'] if len(self.raw_history) >= 2 else 10
@@ -166,7 +199,6 @@ class SunwinAI(BaseTaiXiuAI):
         final_prob_tai = (self.weight_tong * prob_tong_tai) + (self.weight_dice * prob_dice_tai)
         raw_pred = 1 if final_prob_tai >= 0.5 else 0
         
-        # LOGIC BẺ CẦU SUNWIN
         if self.error_streak == 4:
             print("[♠️ SUNWIN] ⚠️ KÍCH HOẠT BẺ CẦU TAY THỨ 5!")
             final_pred = 1 - raw_pred
@@ -217,10 +249,8 @@ class SunwinAI(BaseTaiXiuAI):
                 
                 if self.last_prediction is not None and self.predicted_phien == int(phien):
                     won = (self.last_prediction == res_val)
-                    if not won:
-                        self.error_streak += 1
-                    else:
-                        self.error_streak = 0
+                    if not won: self.error_streak += 1
+                    else: self.error_streak = 0
                         
                     self.recent_15_results.append(won)
                     if len(self.recent_15_results) > 15: self.recent_15_results.pop(0) 
@@ -238,15 +268,16 @@ class SunwinAI(BaseTaiXiuAI):
             time.sleep(FETCH_INTERVAL)
 
 # ==========================================================
-# LUỒNG 2: AI HITCLUB MD5
+# LUỒNG 2: AI HITCLUB MD5 
 # ==========================================================
 class HitclubAI(BaseTaiXiuAI):
     def __init__(self):
-        self.max_samples_tong = 5  
-        self.max_samples_dice = 8  
-        self.weight_tong = 0.45     
-        self.weight_dice = 0.55
-        self.history_file = "datahitclub.json"
+        self.max_samples_tong = HITCLUB_MAX_SAMPLES_TONG  
+        self.max_samples_dice = HITCLUB_MAX_SAMPLES_DICE  
+        self.weight_tong = HITCLUB_WEIGHT_TONG     
+        self.weight_dice = HITCLUB_WEIGHT_DICE
+        self.sample_decay = HITCLUB_SAMPLE_DECAY
+        self.history_file = HITCLUB_HISTORY_FILE
         
         self.api_url = f"{NODEJS_SERVER}/api/hitclub/live"
         self.sync_url = f"{NODEJS_SERVER}/api/hitclub/update-prediction"
@@ -285,8 +316,8 @@ class HitclubAI(BaseTaiXiuAI):
         target_tong = last_round['tong']
         target_dice = last_round['dice']
         
-        prob_tong_tai = self.get_prob_by_tong(self.raw_history, target_tong, self.max_samples_tong)
-        prob_dice_tai = self.get_prob_by_dice(self.raw_history, target_dice, self.max_samples_dice)
+        prob_tong_tai = self.get_prob_by_tong(self.raw_history, target_tong, self.max_samples_tong, self.sample_decay)
+        prob_dice_tai = self.get_prob_by_dice(self.raw_history, target_dice, self.max_samples_dice, self.sample_decay)
         
         v1 = self.raw_history[-3]['tong'] if len(self.raw_history) >= 3 else 10
         v2 = self.raw_history[-2]['tong'] if len(self.raw_history) >= 2 else 10
@@ -296,7 +327,6 @@ class HitclubAI(BaseTaiXiuAI):
         final_prob_tai = (self.weight_tong * prob_tong_tai) + (self.weight_dice * prob_dice_tai)
         raw_pred = 1 if final_prob_tai >= 0.5 else 0
         
-        # LOGIC BẺ CẦU HITCLUB
         if self.error_streak >= 4:
             print("[♦️ HITCLUB] ⚠️ ĐÃ SAI 4 TAY -> KÍCH HOẠT BẺ CẦU!")
             final_pred = 1 - raw_pred
@@ -346,10 +376,8 @@ class HitclubAI(BaseTaiXiuAI):
                 
                 if self.last_prediction is not None and self.predicted_phien == int(phien):
                     won = (self.last_prediction == res_val)
-                    if not won:
-                        self.error_streak += 1
-                    else:
-                        self.error_streak = 0
+                    if not won: self.error_streak += 1
+                    else: self.error_streak = 0
                         
                     self.recent_15_results.append(won)
                     if len(self.recent_15_results) > 15: self.recent_15_results.pop(0) 
@@ -367,7 +395,7 @@ class HitclubAI(BaseTaiXiuAI):
             time.sleep(FETCH_INTERVAL)
 
 # ==========================================================
-# KHỞI CHẠY ĐA LUỒNG (THREADING)
+# KHỞI CHẠY ĐA LUỒNG SỬ DỤNG THREADING
 # ==========================================================
 def run_sunwin_bot():
     bot = SunwinAI()
