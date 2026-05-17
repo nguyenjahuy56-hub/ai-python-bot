@@ -37,9 +37,9 @@ try:
     db = mongo_client['sunwin_database']
     sunwin_collection = db['history_docvi']
     mongo_client.admin.command('ping')
-    print("✅ KẾT NỐI MONGODB SUNWIN THÀNH CÔNG!")
+    print("✅ KẾT NỐI MONGODB SUNWIN THÀNH CÔNG!", flush=True)
 except Exception as e:
-    print(f"❌ LỖI KẾT NỐI MONGODB: {e}")
+    print(f"❌ LỖI KẾT NỐI MONGODB: {e}", flush=True)
     sunwin_collection = None
 
 # ==========================================================
@@ -66,7 +66,6 @@ class BaseTaiXiuAI:
         if s in ['XIU', 'X', '0', 'FALSE']: return 0
         return None
 
-    # Logic mới: Tính xác suất dựa trên tổng Trọng số các mẫu (Mẫu gần = điểm cao, mẫu xa = điểm thấp)
     def get_prob_by_tong(self, history, target_tong, max_samples, decay_rate):
         tai_weight = 0.0
         total_weight = 0.0
@@ -74,7 +73,7 @@ class BaseTaiXiuAI:
         
         for i in range(len(history) - 2, -1, -1):
             if history[i]['tong'] == target_tong:
-                current_weight = decay_rate ** matched_count  # Mẫu đầu: decay^0 = 1, Mẫu hai: decay^1 ...
+                current_weight = decay_rate ** matched_count 
                 total_weight += current_weight
                 
                 if history[i + 1]['result'] == 1: 
@@ -86,7 +85,6 @@ class BaseTaiXiuAI:
         if total_weight == 0: return 0.5 
         return tai_weight / total_weight
 
-    # Tương tự cho Xúc Xắc
     def get_prob_by_dice(self, history, target_dice_str, max_samples, decay_rate):
         tai_weight = 0.0
         total_weight = 0.0
@@ -199,21 +197,25 @@ class SunwinAI(BaseTaiXiuAI):
         final_prob_tai = (self.weight_tong * prob_tong_tai) + (self.weight_dice * prob_dice_tai)
         raw_pred = 1 if final_prob_tai >= 0.5 else 0
         
-        # LOGIC BẺ CẦU MỚI: Chỉ kích hoạt bẻ cầu khi gãy đúng 2 tay liên tiếp
-        if self.error_streak == 2:
-            print("[♠️ SUNWIN] ⚠️ GÃY 2 TAY -> KÍCH HOẠT BẺ CẦU TAY THỨ 3!")
+        # LOGIC BẺ CẦU: Tăng ngưỡng bẻ cầu thành sai 4 tay liên tiếp
+        if self.error_streak == 4:
+            print("[♠️ SUNWIN] ⚠️ GÃY 4 TAY -> KÍCH HOẠT BẺ CẦU TAY THỨ 5!", flush=True)
             final_pred = 1 - raw_pred
-            detail_msg = f"Đọc Vị | ÉP BẺ CẦU (Gãy 2)"
+            detail_msg = f"Đọc Vị | ÉP BẺ CẦU (Gãy 4)"
         else:
             final_pred = raw_pred
             detail_msg = f"Đọc Vị | T:{target_tong} B:{target_dice}"
-            if self.error_streak >= 3:
-                print(f"[♠️ SUNWIN] 🔄 Chuỗi gãy đang là {self.error_streak} -> Đã tắt bẻ cầu, trở về bình thường.")
+            if self.error_streak >= 5:
+                print(f"[♠️ SUNWIN] 🔄 Chuỗi gãy đang là {self.error_streak} -> Đã tắt bẻ cầu, trở về bình thường.", flush=True)
             
         self.last_prediction = final_pred
         next_phien = int(self.raw_history[-1]['phien']) + 1 if str(self.raw_history[-1]['phien']).isdigit() else "Tiếp"
         self.predicted_phien = next_phien
         pred_str = "TÀI" if final_pred == 1 else "XỈU"
+
+        # IN LOG DỰ ĐOÁN RA RAILWAY 
+        print(f"🎯 [♠️ SUNWIN] DỰ ĐOÁN PHIÊN {next_phien} => {pred_str} | Tỉ lệ: {confidence_rate}% | Chuỗi gãy: {self.error_streak}", flush=True)
+        print("-" * 50, flush=True)
 
         self.dashboard_history.append({"phien": next_phien, "pred": pred_str, "actual": None, "win": None})
         if len(self.dashboard_history) > 20: self.dashboard_history.pop(0)
@@ -221,7 +223,7 @@ class SunwinAI(BaseTaiXiuAI):
         self.sync_to_dashboard(pred_str, confidence_rate, detail_msg, self.sync_url)
 
     def run(self):
-        print("🔥 [SUNWIN] ĐANG CHẠY LUỒNG AI ĐỌC VỊ...")
+        print("🔥 [SUNWIN] ĐANG CHẠY LUỒNG AI ĐỌC VỊ...", flush=True)
         while True:
             try:
                 resp = requests.get(self.api_url, timeout=3)
@@ -262,7 +264,7 @@ class SunwinAI(BaseTaiXiuAI):
 
                 self.raw_history.append({'phien': phien, 'result': res_val, 'tong': tong, 'dice': dice_str})
                 self.save_history()
-                print(f"[♠️ SUNWIN] KQ Phiên {phien}: {'TÀI' if res_val==1 else 'XỈU'} | Tổng: {tong} | Xúc xắc: {dice_str}")
+                print(f"[♠️ SUNWIN] KQ Phiên {phien}: {'TÀI' if res_val==1 else 'XỈU'} | Tổng: {tong} | Xúc xắc: {dice_str}", flush=True)
                 self.predict_next()
             except Exception:
                 pass
@@ -328,21 +330,25 @@ class HitclubAI(BaseTaiXiuAI):
         final_prob_tai = (self.weight_tong * prob_tong_tai) + (self.weight_dice * prob_dice_tai)
         raw_pred = 1 if final_prob_tai >= 0.5 else 0
         
-        # LOGIC BẺ CẦU MỚI: Chỉ kích hoạt bẻ cầu khi gãy đúng 2 tay liên tiếp
-        if self.error_streak == 2:
-            print("[♦️ HITCLUB] ⚠️ GÃY 2 TAY -> KÍCH HOẠT BẺ CẦU TAY THỨ 3!")
+        # LOGIC BẺ CẦU: Tăng ngưỡng bẻ cầu thành sai 4 tay liên tiếp
+        if self.error_streak == 4:
+            print("[♦️ HITCLUB] ⚠️ GÃY 4 TAY -> KÍCH HOẠT BẺ CẦU TAY THỨ 5!", flush=True)
             final_pred = 1 - raw_pred
-            detail_msg = f"Đọc Vị | ÉP BẺ CẦU (Gãy 2)"
+            detail_msg = f"Đọc Vị | ÉP BẺ CẦU (Gãy 4)"
         else:
             final_pred = raw_pred
             detail_msg = f"Đọc Vị | T:{target_tong} B:{target_dice}"
-            if self.error_streak >= 3:
-                print(f"[♦️ HITCLUB] 🔄 Chuỗi gãy đang là {self.error_streak} -> Đã tắt bẻ cầu, trở về bình thường.")
+            if self.error_streak >= 5:
+                print(f"[♦️ HITCLUB] 🔄 Chuỗi gãy đang là {self.error_streak} -> Đã tắt bẻ cầu, trở về bình thường.", flush=True)
             
         self.last_prediction = final_pred
         next_phien = int(self.raw_history[-1]['phien']) + 1 if str(self.raw_history[-1]['phien']).isdigit() else "Tiếp"
         self.predicted_phien = next_phien
         pred_str = "TÀI" if final_pred == 1 else "XỈU"
+
+        # IN LOG DỰ ĐOÁN RA RAILWAY 
+        print(f"🎯 [♦️ HITCLUB] DỰ ĐOÁN PHIÊN {next_phien} => {pred_str} | Tỉ lệ: {confidence_rate}% | Chuỗi gãy: {self.error_streak}", flush=True)
+        print("-" * 50, flush=True)
 
         self.dashboard_history.append({"phien": next_phien, "pred": pred_str, "actual": None, "win": None})
         if len(self.dashboard_history) > 20: self.dashboard_history.pop(0)
@@ -350,7 +356,7 @@ class HitclubAI(BaseTaiXiuAI):
         self.sync_to_dashboard(pred_str, confidence_rate, detail_msg, self.sync_url)
 
     def run(self):
-        print("🔥 [HITCLUB] ĐANG CHẠY LUỒNG AI ĐỌC VỊ...")
+        print("🔥 [HITCLUB] ĐANG CHẠY LUỒNG AI ĐỌC VỊ...", flush=True)
         while True:
             try:
                 resp = requests.get(self.api_url, timeout=3)
@@ -391,7 +397,7 @@ class HitclubAI(BaseTaiXiuAI):
 
                 self.raw_history.append({'phien': phien, 'result': res_val, 'tong': tong, 'dice': dice_str})
                 self.save_history()
-                print(f"[♦️ HITCLUB] KQ Phiên {phien}: {'TÀI' if res_val==1 else 'XỈU'} | Tổng: {tong} | Xúc xắc: {dice_str}")
+                print(f"[♦️ HITCLUB] KQ Phiên {phien}: {'TÀI' if res_val==1 else 'XỈU'} | Tổng: {tong} | Xúc xắc: {dice_str}", flush=True)
                 self.predict_next()
             except Exception:
                 pass
