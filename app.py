@@ -17,7 +17,7 @@ SUNWIN_L1_WEIGHT_TONG = 0.40
 SUNWIN_L1_WEIGHT_DICE = 0.60      
 SUNWIN_L1_DECAY = 1.0    
 
-# --- LOGIC 2: ĐỌC VỊ KHI VÀO FORM BỆT (3 tay TTT hoặc XXX) ---
+# --- LOGIC 2: ĐỌC VỊ KHI VÀO FORM BỆT ---
 SUNWIN_L2_MAX_SAMPLES_TONG = 7  
 SUNWIN_L2_MAX_SAMPLES_DICE = 13
 SUNWIN_L2_WEIGHT_TONG = 0.30
@@ -33,7 +33,7 @@ HITCLUB_L1_WEIGHT_TONG = 0.30
 HITCLUB_L1_WEIGHT_DICE = 0.70      
 HITCLUB_L1_DECAY = 0.85  
 
-# --- LOGIC 2: ĐỌC VỊ KHI VÀO FORM BỆT (3 tay TTT hoặc XXX) ---
+# --- LOGIC 2: ĐỌC VỊ KHI VÀO FORM BỆT ---
 HITCLUB_L2_MAX_SAMPLES_TONG = 7    
 HITCLUB_L2_MAX_SAMPLES_DICE = 13
 HITCLUB_L2_WEIGHT_TONG = 0.30
@@ -48,7 +48,7 @@ HITCLUB_HISTORY_FILE = "datahitclubmd5.json"
 
 # ========================================================================
 
-# CẤU HÌNH KẾT NỐI MONGODB (Cho Sunwin - Giữ nguyên kết nối Cloud)
+# CẤU HÌNH KẾT NỐI MONGODB
 MONGO_URI = "mongodb+srv://huylog333_db_user:engL1VIN3XA7egZY@cluster0.2myhlng.mongodb.net/?appName=Cluster0"
 try:
     mongo_client = MongoClient(MONGO_URI, serverSelectionTimeoutMS=8000, connectTimeoutMS=8000)
@@ -61,7 +61,7 @@ except Exception as e:
     sunwin_collection = None
 
 # ==========================================================
-# LỚP AI ĐỌC VỊ CHUNG (Tích hợp logic Time Decay Weight)
+# LỚP AI ĐỌC VỊ CHUNG
 # ==========================================================
 class BaseTaiXiuAI:
     def extract_data_list(self, json_data):
@@ -156,14 +156,12 @@ class BaseTaiXiuAI:
 # ==========================================================
 class SunwinAI(BaseTaiXiuAI):
     def __init__(self):
-        # Thông số Logic 1 (Bình thường)
         self.l1_max_samples_tong = SUNWIN_L1_MAX_SAMPLES_TONG  
         self.l1_max_samples_dice = SUNWIN_L1_MAX_SAMPLES_DICE  
         self.l1_weight_tong = SUNWIN_L1_WEIGHT_TONG     
         self.l1_weight_dice = SUNWIN_L1_WEIGHT_DICE
         self.l1_decay = SUNWIN_L1_DECAY
         
-        # Thông số Logic 2 (Bệt TTT hoặc XXX)
         self.l2_max_samples_tong = SUNWIN_L2_MAX_SAMPLES_TONG  
         self.l2_max_samples_dice = SUNWIN_L2_MAX_SAMPLES_DICE  
         self.l2_weight_tong = SUNWIN_L2_WEIGHT_TONG     
@@ -180,6 +178,7 @@ class SunwinAI(BaseTaiXiuAI):
         self.error_streak = 0
         self.recent_15_results = [] 
         self.dashboard_history = [] 
+        self.l2_remaining = 0 
         
         self.load_memory()
 
@@ -212,16 +211,34 @@ class SunwinAI(BaseTaiXiuAI):
         target_tong = last_round['tong']
         target_dice = last_round['dice']
         
-        # LOGIC CHUYỂN ĐỔI: Kiểm tra 3 ván gần nhất xem có phải TTT hoặc XXX không
-        last_3_results = [r['result'] for r in self.raw_history[-3:]]
-        is_bet = (last_3_results[0] == last_3_results[1] == last_3_results[2])
+        # Lấy tối đa 5 ván gần nhất chuyển thành chuỗi T/X
+        recent_5 = [r['result'] for r in self.raw_history[-5:]]
+        s_5 = "".join(["T" if r == 1 else "X" for r in recent_5])
         
-        if is_bet:
+        is_l2_trigger = False
+        
+        # TH1: 3 ván gần nhất là TTT hoặc XXX (Chuỗi kết thúc bằng TTT/XXX)
+        if len(s_5) >= 3 and (s_5.endswith("TTT") or s_5.endswith("XXX")):
+            is_l2_trigger = True
+        # TH2: TTT hoặc XXX nằm ở giữa khung 5 ván
+        elif len(s_5) == 5 and s_5 in ["XTTTX", "TXXXT"]:
+            is_l2_trigger = True
+        # TH3: Nằm ở đầu khung 5 ván thì yêu cầu phải có 4 kí tự
+        elif len(s_5) == 5 and s_5 in ["TTTTX", "XXXXT"]:
+            is_l2_trigger = True
+            
+        # Nếu khớp 1 trong 3 thế trên -> Sạc lại 2 lượt L2
+        if is_l2_trigger:
+            self.l2_remaining = 2
+        
+        if self.l2_remaining > 0:
             # ---> KÍCH HOẠT LOGIC 2 (BỆT)
-            logic_mode = "L2(Bệt)"
+            logic_mode = f"L2(Bệt) - Còn {self.l2_remaining} lượt"
             prob_tong = self.get_prob_by_tong(self.raw_history, target_tong, self.l2_max_samples_tong, self.l2_decay)
             prob_dice = self.get_prob_by_dice(self.raw_history, target_dice, self.l2_max_samples_dice, self.l2_decay)
             final_prob_tai = (self.l2_weight_tong * prob_tong) + (self.l2_weight_dice * prob_dice)
+            
+            self.l2_remaining -= 1
         else:
             # ---> KÍCH HOẠT LOGIC 1 (BÌNH THƯỜNG)
             logic_mode = "L1(Thường)"
@@ -236,7 +253,6 @@ class SunwinAI(BaseTaiXiuAI):
         v3 = self.raw_history[-1]['tong']
         confidence_rate = self.get_confidence_rate(v1, v2, v3)
         
-        # LOGIC BẺ CẦU MỚI: Chỉ kích hoạt bẻ cầu khi gãy đúng 4 tay liên tiếp
         if self.error_streak == 4:
             print("[♠️ SUNWIN] ⚠️ GÃY 4 TAY -> KÍCH HOẠT BẺ CẦU TAY THỨ 5!")
             final_pred = 1 - raw_pred
@@ -310,14 +326,12 @@ class SunwinAI(BaseTaiXiuAI):
 # ==========================================================
 class HitclubAI(BaseTaiXiuAI):
     def __init__(self):
-        # Thông số Logic 1 (Bình thường)
         self.l1_max_samples_tong = HITCLUB_L1_MAX_SAMPLES_TONG  
         self.l1_max_samples_dice = HITCLUB_L1_MAX_SAMPLES_DICE  
         self.l1_weight_tong = HITCLUB_L1_WEIGHT_TONG     
         self.l1_weight_dice = HITCLUB_L1_WEIGHT_DICE
         self.l1_decay = HITCLUB_L1_DECAY
         
-        # Thông số Logic 2 (Bệt TTT hoặc XXX)
         self.l2_max_samples_tong = HITCLUB_L2_MAX_SAMPLES_TONG  
         self.l2_max_samples_dice = HITCLUB_L2_MAX_SAMPLES_DICE  
         self.l2_weight_tong = HITCLUB_L2_WEIGHT_TONG     
@@ -335,6 +349,7 @@ class HitclubAI(BaseTaiXiuAI):
         self.error_streak = 0
         self.recent_15_results = [] 
         self.dashboard_history = [] 
+        self.l2_remaining = 0 
         
         self.load_memory()
 
@@ -362,16 +377,34 @@ class HitclubAI(BaseTaiXiuAI):
         target_tong = last_round['tong']
         target_dice = last_round['dice']
         
-        # LOGIC CHUYỂN ĐỔI: Kiểm tra 3 ván gần nhất xem có phải TTT hoặc XXX không
-        last_3_results = [r['result'] for r in self.raw_history[-3:]]
-        is_bet = (last_3_results[0] == last_3_results[1] == last_3_results[2])
+        # Lấy tối đa 5 ván gần nhất chuyển thành chuỗi T/X
+        recent_5 = [r['result'] for r in self.raw_history[-5:]]
+        s_5 = "".join(["T" if r == 1 else "X" for r in recent_5])
         
-        if is_bet:
+        is_l2_trigger = False
+        
+        # TH1: 3 ván gần nhất là TTT hoặc XXX (Chuỗi kết thúc bằng TTT/XXX)
+        if len(s_5) >= 3 and (s_5.endswith("TTT") or s_5.endswith("XXX")):
+            is_l2_trigger = True
+        # TH2: TTT hoặc XXX nằm ở giữa khung 5 ván
+        elif len(s_5) == 5 and s_5 in ["XTTTX", "TXXXT"]:
+            is_l2_trigger = True
+        # TH3: Nằm ở đầu khung 5 ván thì yêu cầu phải có 4 kí tự
+        elif len(s_5) == 5 and s_5 in ["TTTTX", "XXXXT"]:
+            is_l2_trigger = True
+            
+        # Nếu khớp 1 trong 3 thế trên -> Sạc lại 2 lượt L2
+        if is_l2_trigger:
+            self.l2_remaining = 2
+        
+        if self.l2_remaining > 0:
             # ---> KÍCH HOẠT LOGIC 2 (BỆT)
-            logic_mode = "L2(Bệt)"
+            logic_mode = f"L2(Bệt) - Còn {self.l2_remaining} lượt"
             prob_tong = self.get_prob_by_tong(self.raw_history, target_tong, self.l2_max_samples_tong, self.l2_decay)
             prob_dice = self.get_prob_by_dice(self.raw_history, target_dice, self.l2_max_samples_dice, self.l2_decay)
             final_prob_tai = (self.l2_weight_tong * prob_tong) + (self.l2_weight_dice * prob_dice)
+            
+            self.l2_remaining -= 1
         else:
             # ---> KÍCH HOẠT LOGIC 1 (BÌNH THƯỜNG)
             logic_mode = "L1(Thường)"
@@ -386,7 +419,6 @@ class HitclubAI(BaseTaiXiuAI):
         v3 = self.raw_history[-1]['tong']
         confidence_rate = self.get_confidence_rate(v1, v2, v3)
         
-        # LOGIC BẺ CẦU MỚI: Chỉ kích hoạt bẻ cầu khi gãy đúng 4 tay liên tiếp
         if self.error_streak == 4:
             print("[♦️ HITCLUB] ⚠️ GÃY 4 TAY -> KÍCH HOẠT BẺ CẦU TAY THỨ 5!")
             final_pred = 1 - raw_pred
