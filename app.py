@@ -11,10 +11,10 @@ from pymongo import MongoClient
 
 # ♠️ THÔNG SỐ AI CHO SUNWIN
 SUNWIN_MAX_SAMPLES_TONG = 8    # Số lần quét lại lịch sử cho TỔNG 
-SUNWIN_MAX_SAMPLES_DICE = 3   # Số lần quét lại lịch sử cho BỘ XÚC XẮC 
+SUNWIN_MAX_SAMPLES_DICE = 4   # Số lần quét lại lịch sử cho BỘ XÚC XẮC 
 SUNWIN_WEIGHT_TONG = 0.30      # Trọng số của Tổng so với Xúc Xắc (45%)
 SUNWIN_WEIGHT_DICE = 0.70      # Trọng số của Xúc Xắc so với Tổng (55%)
-SUNWIN_SAMPLE_DECAY = 0.85     # Độ suy giảm trọng số mẫu cũ (1.0 là ko giảm. 0.85 là tối ưu nhất: 100% -> 85% -> 72%...)
+SUNWIN_SAMPLE_DECAY = 0.50     # Độ suy giảm trọng số mẫu cũ (1.0 là ko giảm. 0.85 là tối ưu nhất: 100% -> 85% -> 72%...)
 
 # ♦️ THÔNG SỐ AI CHO HITCLUB MD5
 HITCLUB_MAX_SAMPLES_TONG = 15    
