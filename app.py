@@ -227,9 +227,9 @@ class SunwinAI(BaseTaiXiuAI):
         elif len(s_5) == 5 and s_5 in ["TTTTX", "XXXXT"]:
             is_l2_trigger = True
             
-        # Nếu khớp 1 trong 3 thế trên -> Sạc lại 2 lượt L2
+        # Nếu khớp 1 trong 3 thế trên -> Sạc lại 1 lượt L2 (vì khung 5 tay trượt liên tục)
         if is_l2_trigger:
-            self.l2_remaining = 2
+            self.l2_remaining = 1
         
         if self.l2_remaining > 0:
             # ---> KÍCH HOẠT LOGIC 2 (BỆT)
@@ -393,9 +393,9 @@ class HitclubAI(BaseTaiXiuAI):
         elif len(s_5) == 5 and s_5 in ["TTTTX", "XXXXT"]:
             is_l2_trigger = True
             
-        # Nếu khớp 1 trong 3 thế trên -> Sạc lại 2 lượt L2
+        # Nếu khớp 1 trong 3 thế trên -> Sạc lại 1 lượt L2 (vì khung 5 tay trượt liên tục)
         if is_l2_trigger:
-            self.l2_remaining = 2
+            self.l2_remaining = 1
         
         if self.l2_remaining > 0:
             # ---> KÍCH HOẠT LOGIC 2 (BỆT)
