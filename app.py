@@ -10,11 +10,11 @@ from pymongo import MongoClient
 # ================= CẤU HÌNH THÔNG SỐ AI (ĐÃ TÁCH RIÊNG & THÊM TRỌNG SỐ THỜI GIAN) =================
 
 # ♠️ THÔNG SỐ AI CHO SUNWIN
-SUNWIN_MAX_SAMPLES_TONG = 6     
+SUNWIN_MAX_SAMPLES_TONG = 8    
 SUNWIN_MAX_SAMPLES_DICE = 13    
 SUNWIN_WEIGHT_TONG = 0.70       
 SUNWIN_WEIGHT_DICE = 0.30       
-SUNWIN_SAMPLE_DECAY = 0.70     
+SUNWIN_SAMPLE_DECAY = 0.80     
 
 # ♦️ THÔNG SỐ AI CHO HITCLUB MD5
 HITCLUB_MAX_SAMPLES_TONG = 7    
