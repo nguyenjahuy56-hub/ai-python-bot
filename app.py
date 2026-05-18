@@ -11,9 +11,9 @@ from pymongo import MongoClient
 
 # ♠️ THÔNG SỐ AI CHO SUNWIN
 SUNWIN_MAX_SAMPLES_TONG = 6     
-SUNWIN_MAX_SAMPLES_DICE = 8 
-SUNWIN_WEIGHT_TONG = 0.45      
-SUNWIN_WEIGHT_DICE = 0.55       
+SUNWIN_MAX_SAMPLES_DICE = 13    
+SUNWIN_WEIGHT_TONG = 0.70       
+SUNWIN_WEIGHT_DICE = 0.30       
 SUNWIN_SAMPLE_DECAY = 0.70     
 
 # ♦️ THÔNG SỐ AI CHO HITCLUB MD5
@@ -196,12 +196,15 @@ class SunwinAI(BaseTaiXiuAI):
         next_phien = int(self.raw_history[-1]['phien']) + 1 if str(self.raw_history[-1]['phien']).isdigit() else "Tiếp"
         pred_str = "TÀI" if final_pred == 1 else "XỈU"
 
-        # LOGIC TÍNH ĐỘ TIN CẬY MỚI (Trung bình cộng)
+        # LOGIC TÍNH ĐỘ TIN CẬY
         avg_prob_tai = (prob_tong_tai + prob_dice_tai) / 2
         if final_pred == 1:
             confidence_rate = round(avg_prob_tai * 100, 1)
         else:
             confidence_rate = round((1 - avg_prob_tai) * 100, 1)
+
+        # MẸO NHÉT ĐỘ TIN CẬY VÀO DETAIL ĐỂ SERVER TỰ HIỆN MÀ KO CẦN SỬA CODE SERVER
+        detail_msg = f"{detail_msg} | 📊 Tỉ lệ: {confidence_rate}%"
 
         tong_pred_str = "TÀI" if prob_tong_tai >= 0.5 else "XỈU"
         dice_pred_str = "TÀI" if prob_dice_tai >= 0.5 else "XỈU"
@@ -209,7 +212,7 @@ class SunwinAI(BaseTaiXiuAI):
         print(f"🎯 [♠️ SUNWIN] DỰ ĐOÁN PHIÊN {next_phien} => CHỐT: {pred_str}", flush=True)
         print(f"   ├─ Phân tích Tổng     : {tong_pred_str} (Tỉ lệ Tài: {round(prob_tong_tai * 100, 1)}%)", flush=True)
         print(f"   ├─ Phân tích Xúc xắc  : {dice_pred_str} (Tỉ lệ Tài: {round(prob_dice_tai * 100, 1)}%)", flush=True)
-        print(f"   ├─ 📊 Độ tin cậy (Dash): {confidence_rate}%", flush=True)
+        print(f"   ├─ 📊 Độ tin cậy      : {confidence_rate}%", flush=True)
         print(f"   └─ ⚠️ Chuỗi gãy hiện tại: {self.error_streak}", flush=True)
         print("-" * 50, flush=True)
 
@@ -335,12 +338,15 @@ class HitclubAI(BaseTaiXiuAI):
         next_phien = int(self.raw_history[-1]['phien']) + 1 if str(self.raw_history[-1]['phien']).isdigit() else "Tiếp"
         pred_str = "TÀI" if final_pred == 1 else "XỈU"
 
-        # LOGIC TÍNH ĐỘ TIN CẬY MỚI (Trung bình cộng)
+        # LOGIC TÍNH ĐỘ TIN CẬY
         avg_prob_tai = (prob_tong_tai + prob_dice_tai) / 2
         if final_pred == 1:
             confidence_rate = round(avg_prob_tai * 100, 1)
         else:
             confidence_rate = round((1 - avg_prob_tai) * 100, 1)
+
+        # MẸO NHÉT ĐỘ TIN CẬY VÀO DETAIL ĐỂ SERVER TỰ HIỆN MÀ KO CẦN SỬA CODE SERVER
+        detail_msg = f"{detail_msg} | 📊 Tỉ lệ: {confidence_rate}%"
 
         tong_pred_str = "TÀI" if prob_tong_tai >= 0.5 else "XỈU"
         dice_pred_str = "TÀI" if prob_dice_tai >= 0.5 else "XỈU"
@@ -348,7 +354,7 @@ class HitclubAI(BaseTaiXiuAI):
         print(f"🎯 [♦️ HITCLUB] DỰ ĐOÁN PHIÊN {next_phien} => CHỐT: {pred_str}", flush=True)
         print(f"   ├─ Phân tích Tổng     : {tong_pred_str} (Tỉ lệ Tài: {round(prob_tong_tai * 100, 1)}%)", flush=True)
         print(f"   ├─ Phân tích Xúc xắc  : {dice_pred_str} (Tỉ lệ Tài: {round(prob_dice_tai * 100, 1)}%)", flush=True)
-        print(f"   ├─ 📊 Độ tin cậy (Dash): {confidence_rate}%", flush=True)
+        print(f"   ├─ 📊 Độ tin cậy      : {confidence_rate}%", flush=True)
         print(f"   └─ ⚠️ Chuỗi gãy hiện tại: {self.error_streak}", flush=True)
         print("-" * 50, flush=True)
 
