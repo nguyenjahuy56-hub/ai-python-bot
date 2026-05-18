@@ -10,11 +10,11 @@ from pymongo import MongoClient
 # ================= CẤU HÌNH THÔNG SỐ AI (ĐÃ TÁCH RIÊNG & THÊM TRỌNG SỐ THỜI GIAN) =================
 
 # ♠️ THÔNG SỐ AI CHO SUNWIN
-SUNWIN_MAX_SAMPLES_TONG = 6     # Số lần quét lại lịch sử cho TỔNG 
-SUNWIN_MAX_SAMPLES_DICE = 13    # Số lần quét lại lịch sử cho BỘ XÚC XẮC 
-SUNWIN_WEIGHT_TONG = 0.65       # Trọng số của Tổng so với Xúc Xắc (45%)
-SUNWIN_WEIGHT_DICE = 0.35       # Trọng số của Xúc Xắc so với Tổng (55%)
-SUNWIN_SAMPLE_DECAY = 0.70     # Độ suy giảm trọng số mẫu cũ (1.0 là ko giảm. 0.85 là tối ưu nhất: 100% -> 85% -> 72%...)
+SUNWIN_MAX_SAMPLES_TONG = 6     
+SUNWIN_MAX_SAMPLES_DICE = 8 
+SUNWIN_WEIGHT_TONG = 0.45      
+SUNWIN_WEIGHT_DICE = 0.55       
+SUNWIN_SAMPLE_DECAY = 0.70     
 
 # ♦️ THÔNG SỐ AI CHO HITCLUB MD5
 HITCLUB_MAX_SAMPLES_TONG = 7    
@@ -30,7 +30,7 @@ HITCLUB_HISTORY_FILE = "datahitclubmd5.json"
 
 # ========================================================================
 
-# CẤU HÌNH KẾT NỐI MONGODB (Cho Sunwin - Giữ nguyên kết nối Cloud)
+# CẤU HÌNH KẾT NỐI MONGODB (Cho Sunwin)
 MONGO_URI = "mongodb+srv://huylog333_db_user:engL1VIN3XA7egZY@cluster0.2myhlng.mongodb.net/?appName=Cluster0"
 try:
     mongo_client = MongoClient(MONGO_URI, serverSelectionTimeoutMS=8000, connectTimeoutMS=8000)
@@ -43,7 +43,7 @@ except Exception as e:
     sunwin_collection = None
 
 # ==========================================================
-# LỚP AI ĐỌC VỊ CHUNG (Tích hợp logic Time Decay Weight)
+# LỚP AI ĐỌC VỊ CHUNG
 # ==========================================================
 class BaseTaiXiuAI:
     def extract_data_list(self, json_data):
@@ -103,16 +103,6 @@ class BaseTaiXiuAI:
                 
         if total_weight == 0: return 0.5 
         return tai_weight / total_weight
-
-    def get_confidence_rate(self, v1, v2, v3):
-        raw_string = f"{v1}-{v2}-{v3}"
-        hash_str = hashlib.sha256(raw_string.encode('utf-8')).hexdigest()
-        high_byte, low_byte = 0, 0
-        for i in range(0, 64, 2):
-            if int(hash_str[i:i+2], 16) > 127: high_byte += 1
-            else: low_byte += 1
-        delta = abs(high_byte - low_byte)
-        return min(round(62 + (delta * 1.8), 1), 98.8)
 
     def sync_to_dashboard(self, pred_result, confidence, detail, sync_url):
         if len(self.recent_15_results) > 0:
@@ -189,15 +179,9 @@ class SunwinAI(BaseTaiXiuAI):
         prob_tong_tai = self.get_prob_by_tong(self.raw_history, target_tong, self.max_samples_tong, self.sample_decay)
         prob_dice_tai = self.get_prob_by_dice(self.raw_history, target_dice, self.max_samples_dice, self.sample_decay)
         
-        v1 = self.raw_history[-3]['tong'] if len(self.raw_history) >= 3 else 10
-        v2 = self.raw_history[-2]['tong'] if len(self.raw_history) >= 2 else 10
-        v3 = self.raw_history[-1]['tong']
-        confidence_rate = self.get_confidence_rate(v1, v2, v3)
-        
         final_prob_tai = (self.weight_tong * prob_tong_tai) + (self.weight_dice * prob_dice_tai)
         raw_pred = 1 if final_prob_tai >= 0.5 else 0
         
-        # LOGIC BẺ CẦU: Tăng ngưỡng bẻ cầu thành sai 4 tay liên tiếp
         if self.error_streak == 4:
             print("[♠️ SUNWIN] ⚠️ GÃY 4 TAY -> KÍCH HOẠT BẺ CẦU TAY THỨ 5!", flush=True)
             final_pred = 1 - raw_pred
@@ -210,14 +194,18 @@ class SunwinAI(BaseTaiXiuAI):
             
         self.last_prediction = final_pred
         next_phien = int(self.raw_history[-1]['phien']) + 1 if str(self.raw_history[-1]['phien']).isdigit() else "Tiếp"
-        self.predicted_phien = next_phien
         pred_str = "TÀI" if final_pred == 1 else "XỈU"
 
-        # CHUẨN BỊ LOG CHI TIẾT
+        # LOGIC TÍNH ĐỘ TIN CẬY MỚI (Trung bình cộng)
+        avg_prob_tai = (prob_tong_tai + prob_dice_tai) / 2
+        if final_pred == 1:
+            confidence_rate = round(avg_prob_tai * 100, 1)
+        else:
+            confidence_rate = round((1 - avg_prob_tai) * 100, 1)
+
         tong_pred_str = "TÀI" if prob_tong_tai >= 0.5 else "XỈU"
         dice_pred_str = "TÀI" if prob_dice_tai >= 0.5 else "XỈU"
 
-        # IN LOG DỰ ĐOÁN RA RAILWAY CHI TIẾT
         print(f"🎯 [♠️ SUNWIN] DỰ ĐOÁN PHIÊN {next_phien} => CHỐT: {pred_str}", flush=True)
         print(f"   ├─ Phân tích Tổng     : {tong_pred_str} (Tỉ lệ Tài: {round(prob_tong_tai * 100, 1)}%)", flush=True)
         print(f"   ├─ Phân tích Xúc xắc  : {dice_pred_str} (Tỉ lệ Tài: {round(prob_dice_tai * 100, 1)}%)", flush=True)
@@ -330,15 +318,9 @@ class HitclubAI(BaseTaiXiuAI):
         prob_tong_tai = self.get_prob_by_tong(self.raw_history, target_tong, self.max_samples_tong, self.sample_decay)
         prob_dice_tai = self.get_prob_by_dice(self.raw_history, target_dice, self.max_samples_dice, self.sample_decay)
         
-        v1 = self.raw_history[-3]['tong'] if len(self.raw_history) >= 3 else 10
-        v2 = self.raw_history[-2]['tong'] if len(self.raw_history) >= 2 else 10
-        v3 = self.raw_history[-1]['tong']
-        confidence_rate = self.get_confidence_rate(v1, v2, v3)
-        
         final_prob_tai = (self.weight_tong * prob_tong_tai) + (self.weight_dice * prob_dice_tai)
         raw_pred = 1 if final_prob_tai >= 0.5 else 0
         
-        # LOGIC BẺ CẦU: Tăng ngưỡng bẻ cầu thành sai 4 tay liên tiếp
         if self.error_streak == 4:
             print("[♦️ HITCLUB] ⚠️ GÃY 4 TAY -> KÍCH HOẠT BẺ CẦU TAY THỨ 5!", flush=True)
             final_pred = 1 - raw_pred
@@ -351,14 +333,18 @@ class HitclubAI(BaseTaiXiuAI):
             
         self.last_prediction = final_pred
         next_phien = int(self.raw_history[-1]['phien']) + 1 if str(self.raw_history[-1]['phien']).isdigit() else "Tiếp"
-        self.predicted_phien = next_phien
         pred_str = "TÀI" if final_pred == 1 else "XỈU"
 
-        # CHUẨN BỊ LOG CHI TIẾT
+        # LOGIC TÍNH ĐỘ TIN CẬY MỚI (Trung bình cộng)
+        avg_prob_tai = (prob_tong_tai + prob_dice_tai) / 2
+        if final_pred == 1:
+            confidence_rate = round(avg_prob_tai * 100, 1)
+        else:
+            confidence_rate = round((1 - avg_prob_tai) * 100, 1)
+
         tong_pred_str = "TÀI" if prob_tong_tai >= 0.5 else "XỈU"
         dice_pred_str = "TÀI" if prob_dice_tai >= 0.5 else "XỈU"
 
-        # IN LOG DỰ ĐOÁN RA RAILWAY CHI TIẾT
         print(f"🎯 [♦️ HITCLUB] DỰ ĐOÁN PHIÊN {next_phien} => CHỐT: {pred_str}", flush=True)
         print(f"   ├─ Phân tích Tổng     : {tong_pred_str} (Tỉ lệ Tài: {round(prob_tong_tai * 100, 1)}%)", flush=True)
         print(f"   ├─ Phân tích Xúc xắc  : {dice_pred_str} (Tỉ lệ Tài: {round(prob_dice_tai * 100, 1)}%)", flush=True)
